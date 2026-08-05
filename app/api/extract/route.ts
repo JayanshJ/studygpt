@@ -11,6 +11,11 @@ const TEXT_EXT = [
   "sql", "html", "htm", "css", "scss", "toml", "ini", "env", "log", "xml",
 ];
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB cap on uploaded chat attachments
+// Cap on the extracted text length. An 8 MB text file is already ~8M chars, but
+// a PDF can decompress into far more text than its byte size suggests (a small
+// file of repeated objects / decompression bombs). Truncating here bounds the
+// inlined context and the request body sent to the model on every turn.
+const MAX_CHARS = 250_000;
 
 function extOf(name: string): string {
   const i = name.lastIndexOf(".");
@@ -49,7 +54,16 @@ export async function POST(req: Request) {
     } else {
       text = await file.text();
     }
-    return NextResponse.json({ name: file.name, text, charCount: text.length });
+    // PDF decompression can blow past the 8 MB upload cap; bound the extracted
+    // text so a decompression-bomb PDF can't flood the model's context.
+    const truncated = text.length > MAX_CHARS;
+    if (truncated) text = text.slice(0, MAX_CHARS);
+    return NextResponse.json({
+      name: file.name,
+      text,
+      charCount: text.length,
+      ...(truncated ? { truncated: true, maxChars: MAX_CHARS } : {}),
+    });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Extraction failed" },
