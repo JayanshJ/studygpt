@@ -6,6 +6,7 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { ModeToggle } from "@/components/ModeToggle";
 import type {
+  Attachment,
   Conversation,
   ConversationMode,
   Material,
@@ -166,7 +167,7 @@ export default function Page() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId: conv.id,
-          messages: args.history.map((m) => ({ role: m.role, content: m.content })),
+          messages: args.history.map((m) => ({ role: m.role, content: m.content, attachments: m.attachments ?? undefined })),
           action: args.action,
           userMessageId: args.userMessageId,
           assistantMessageId: args.assistantId,
@@ -239,14 +240,14 @@ export default function Page() {
     }
   }
 
-  async function sendMessage(text: string) {
+  async function sendMessage(text: string, attachments: Attachment[]) {
     if (!conversation || streaming) return;
     const userMsg: MessageWithSources = {
       id: crypto.randomUUID(),
       conversation_id: conversation.id,
       role: "user",
       content: text,
-      attachments: null,
+      attachments: attachments.length ? attachments : null,
       created_at: Date.now(),
     };
     const outgoing = [...messages, userMsg];
@@ -448,6 +449,8 @@ export default function Page() {
           onStop={stop}
           streaming={streaming}
           disabled={streaming || !conversation}
+          model={conversation?.model}
+          projectId={conversation?.project_id ?? null}
           placeholder={
             conversation
               ? conversation.mode === "feynman"

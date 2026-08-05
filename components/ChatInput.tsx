@@ -1,18 +1,32 @@
 "use client";
 
-import { useState, useRef, useEffect, type FormEvent, type KeyboardEvent } from "react";
+import { useState, useRef, useEffect, type FormEvent, type KeyboardEvent, type ClipboardEvent } from "react";
+import type { Attachment } from "@/lib/db/schema";
+import { isVisionModel } from "@/lib/llm/vision";
 
 interface Props {
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments: Attachment[]) => void;
   disabled?: boolean;
   placeholder?: string;
   streaming?: boolean;
   onStop?: () => void;
+  model?: string;
+  projectId?: string | null;
 }
 
-export function ChatInput({ onSend, disabled, placeholder, streaming, onStop }: Props) {
+const TEXT_ACCEPT =
+  ".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.c,.cc,.cpp,.h,.hpp,.cs,.php,.swift,.sh,.bash,.sql,.html,.htm,.css,.scss,.toml,.ini,.env,.log,.xml";
+
+export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, model, projectId }: Props) {
   const [value, setValue] = useState("");
+  const [pending, setPending] = useState<Array<{ id: string; attachment: Attachment; file?: File }>>([]);
+  const [extracting, setExtracting] = useState(false);
+  const [addedToProject, setAddedToProject] = useState<Set<string>>(new Set());
+  const [addingToProject, setAddingToProject] = useState<string | null>(null);
+  const [gateMsg, setGateMsg] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const visionEnabled = isVisionModel(model);
 
   // Grow to fit content, capped at ~6 lines, then scroll.
   useEffect(() => {
@@ -22,11 +36,103 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop }: 
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   }, [value]);
 
+  function addImageFile(file: File) {
+    if (!visionEnabled) {
+      setGateMsg(`"${model}" doesn't support images — switch to a vision model to attach one.`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      if (!dataUrl) return;
+      setPending((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), attachment: { type: "image", name: file.name, mime: file.type, dataUrl } },
+      ]);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function addTextFile(file: File) {
+    setExtracting(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/extract", { method: "POST", body: form });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setGateMsg(err.error || "Could not read that file.");
+        return;
+      }
+      const data = (await res.json()) as { name: string; text: string; charCount: number };
+      setPending((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), attachment: { type: "file", name: data.name, text: data.text, charCount: data.charCount }, file },
+      ]);
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  function onPickChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (files) {
+      for (const f of Array.from(files)) {
+        if (f.type.startsWith("image/")) addImageFile(f);
+        else addTextFile(f);
+      }
+    }
+    e.target.value = "";
+  }
+
+  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    let blockedImage = false;
+    for (const it of Array.from(items)) {
+      if (it.kind === "file" && it.type.startsWith("image/")) {
+        const f = it.getAsFile();
+        if (f) {
+          if (visionEnabled) {
+            e.preventDefault();
+            addImageFile(f);
+          } else {
+            blockedImage = true;
+          }
+        }
+      }
+    }
+    if (blockedImage) setGateMsg(`"${model}" doesn't support images — paste disabled.`);
+  }
+
+  async function addToProject(id: string) {
+    const item = pending.find((p) => p.id === id);
+    if (!item || item.attachment.type !== "file" || !item.file || !projectId) return;
+    setAddingToProject(id);
+    try {
+      const form = new FormData();
+      form.append("projectId", projectId);
+      form.append("file", item.file);
+      const res = await fetch("/api/materials", { method: "POST", body: form });
+      if (res.ok) {
+        setAddedToProject((prev) => new Set(prev).add(id));
+      } else {
+        const err = await res.text();
+        setGateMsg(err || "Add to project failed.");
+      }
+    } finally {
+      setAddingToProject(null);
+    }
+  }
+
   function submit() {
     const text = value.trim();
-    if (!text || disabled || streaming) return;
-    onSend(text);
+    if ((!text && pending.length === 0) || disabled || streaming) return;
+    onSend(text, pending.map((p) => p.attachment));
     setValue("");
+    setPending([]);
+    setAddedToProject(new Set());
+    setGateMsg(null);
   }
 
   function onSubmit(e: FormEvent) {
@@ -43,36 +149,98 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop }: 
 
   return (
     <form onSubmit={onSubmit} className="px-4 pb-5 pt-2">
-      <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-[3px] border border-line bg-paper-2 px-3 py-2 transition-colors focus-within:border-ink/40">
-        <textarea
-          ref={ref}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={1}
-          disabled={disabled}
-          placeholder={placeholder || "Ask about a concept…"}
-          className="mono max-h-48 flex-1 resize-none bg-transparent py-1 text-[13px] leading-6 text-ink outline-none placeholder:text-ink-3 disabled:opacity-50"
-        />
-        {streaming ? (
+      {gateMsg && (
+        <div className="mx-auto mb-1 max-w-3xl text-[11px] text-rule">{gateMsg}</div>
+      )}
+      <div className="mx-auto max-w-3xl rounded-[3px] border border-line bg-paper-2 px-3 py-2 transition-colors focus-within:border-ink/40">
+        {pending.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {pending.map((p) => (
+              <div
+                key={p.id}
+                className="mono flex items-center gap-1.5 rounded-[2px] border border-line bg-paper px-2 py-1 text-[11px] text-ink-2"
+              >
+                {p.attachment.type === "image" ? (
+                  <img src={p.attachment.dataUrl} alt={p.attachment.name} className="h-7 w-7 rounded-[2px] object-cover" />
+                ) : (
+                  <span className="truncate max-w-[160px]">📎 {p.attachment.name} ({p.attachment.charCount.toLocaleString()}c)</span>
+                )}
+                {p.attachment.type === "file" && projectId && (
+                  addedToProject.has(p.id) ? (
+                    <span className="text-feynman">added ✓</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => addToProject(p.id)}
+                      disabled={addingToProject === p.id}
+                      className="text-feynman hover:underline disabled:opacity-50"
+                    >
+                      {addingToProject === p.id ? "…" : "＋ to project"}
+                    </button>
+                  )
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPending((prev) => prev.filter((x) => x.id !== p.id))}
+                  aria-label="Remove attachment"
+                  className="text-ink-3 hover:text-rule"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={visionEnabled ? `${TEXT_ACCEPT},image/*` : TEXT_ACCEPT}
+            multiple
+            className="hidden"
+            onChange={onPickChange}
+          />
           <button
             type="button"
-            onClick={onStop}
-            aria-label="Stop generating"
-            className="mono shrink-0 rounded-[3px] border border-rule px-3 py-1.5 text-[12px] tracking-wide text-rule transition-colors hover:bg-rule/10"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || extracting}
+            title={visionEnabled ? "Attach files or images" : "Attach files (this model can't take images)"}
+            aria-label="Attach files"
+            className="mono shrink-0 rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] tracking-wide text-ink-2 transition-colors hover:border-ink/40 disabled:opacity-40"
           >
-            stop
+            +
           </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={disabled || !value.trim()}
-            aria-label="Send"
-            className="mono shrink-0 rounded-[3px] bg-ink px-3 py-1.5 text-[12px] tracking-wide text-paper-2 transition-opacity hover:opacity-90 disabled:opacity-30"
-          >
-            send ↵
-          </button>
-        )}
+          <textarea
+            ref={ref}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            rows={1}
+            disabled={disabled}
+            placeholder={placeholder || "Ask about a concept…"}
+            className="mono max-h-48 flex-1 resize-none bg-transparent py-1 text-[13px] leading-6 text-ink outline-none placeholder:text-ink-3 disabled:opacity-50"
+          />
+          {streaming ? (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="Stop generating"
+              className="mono shrink-0 rounded-[3px] border border-rule px-3 py-1.5 text-[12px] tracking-wide text-rule transition-colors hover:bg-rule/10"
+            >
+              stop
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={disabled || (!value.trim() && pending.length === 0)}
+              aria-label="Send"
+              className="mono shrink-0 rounded-[3px] bg-ink px-3 py-1.5 text-[12px] tracking-wide text-paper-2 transition-opacity hover:opacity-90 disabled:opacity-30"
+            >
+              send ↵
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );
