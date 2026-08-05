@@ -164,6 +164,7 @@ export default function Page() {
     replaceAssistantId?: string;
     editMessageId?: string;
     editContent?: string;
+    editAttachments?: Attachment[];
   }) {
     const conv = conversation;
     if (!conv) return;
@@ -197,6 +198,7 @@ export default function Page() {
           replaceAssistantId: args.replaceAssistantId,
           editMessageId: args.editMessageId,
           editContent: args.editContent,
+          editAttachments: args.editAttachments,
         }),
         signal: controller.signal,
       });
@@ -319,11 +321,12 @@ export default function Page() {
     });
   }
 
-  async function editMessage(messageId: string, newContent: string) {
+  async function editMessage(messageId: string, newContent: string, attachments: Attachment[]) {
     if (!conversation || streaming) return;
     const idx = messages.findIndex((m) => m.id === messageId);
     if (idx === -1) return;
-    const edited: MessageWithSources = { ...messages[idx], content: newContent };
+    const nextAttachments = attachments.length > 0 ? attachments : null;
+    const edited: MessageWithSources = { ...messages[idx], content: newContent, attachments: nextAttachments };
     const history = [...messages.slice(0, idx), edited]; // drop everything after
     await runChat({
       action: "edit",
@@ -332,6 +335,7 @@ export default function Page() {
       assistantId: crypto.randomUUID(),
       editMessageId: messageId,
       editContent: newContent,
+      editAttachments: attachments,
     });
   }
 
@@ -466,7 +470,7 @@ export default function Page() {
                 sources={m.sources}
                 canRegenerate={m.id === lastAssistantId}
                 onRegenerate={regenerate}
-                onEdit={(content) => editMessage(m.id, content)}
+                onEdit={(content, attachments) => editMessage(m.id, content, attachments)}
               />
             ))}
           </div>

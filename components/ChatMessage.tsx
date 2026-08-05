@@ -8,6 +8,27 @@ import { CodeBlock } from "./CodeBlock";
 import { SourcesPanel } from "./SourcesPanel";
 import type { SourceEntry, Attachment } from "@/lib/db/schema";
 
+// Shallow equality on the attachments an edit produced vs. the originals, so
+// we only persist (and re-run) when something actually changed. Compares by
+// identity of each attachment's distinguishing fields; attachments are
+// immutable once created (image data URLs / inlined file text).
+function sameAttachments(a: Attachment[], b: Attachment[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (x.type !== y.type) return false;
+    if (x.type === "image" && y.type === "image") {
+      if (x.dataUrl !== y.dataUrl || x.name !== y.name) return false;
+    } else if (x.type === "file" && y.type === "file") {
+      if (x.name !== y.name || x.text !== y.text) return false;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
 interface Props {
   role: "user" | "assistant" | "system";
   content: string;
@@ -16,7 +37,7 @@ interface Props {
   attachments?: Attachment[] | null;
   onCopy?: () => void;
   onRegenerate?: () => void;
-  onEdit?: (newContent: string) => void;
+  onEdit?: (newContent: string, attachments: Attachment[]) => void;
   canRegenerate?: boolean;
 }
 
@@ -34,6 +55,7 @@ export function ChatMessage({
   const isUser = role === "user";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content);
+  const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -50,13 +72,23 @@ export function ChatMessage({
   function commitEdit() {
     const t = draft.trim();
     if (!t) return;
+    const atts = draftAttachments;
     setEditing(false);
-    if (t !== content) onEdit?.(t);
+    // Commit when either the text changed or attachments changed. Always pass
+    // the surviving attachment list so the parent + route can persist it.
+    const contentChanged = t !== content;
+    const attsChanged = !sameAttachments(atts, attachments ?? []);
+    if (contentChanged || attsChanged) onEdit?.(t, atts);
   }
 
   function cancelEdit() {
     setDraft(content);
+    setDraftAttachments(attachments ? [...attachments] : []);
     setEditing(false);
+  }
+
+  function removeDraftAttachment(i: number) {
+    setDraftAttachments((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   if (isUser && editing) {
@@ -79,6 +111,46 @@ export function ChatMessage({
             rows={Math.min(8, Math.max(1, draft.split("\n").length))}
             className="mono w-full resize-none rounded-[2px] border border-line bg-paper-2 px-2 py-1 text-[13px] leading-6 text-ink outline-none focus:border-ink"
           />
+          {draftAttachments.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {draftAttachments.map((a, i) =>
+                a.type === "image" ? (
+                  <div
+                    key={i}
+                    className="relative">
+                    <img
+                      src={a.dataUrl}
+                      alt={a.name}
+                      className="max-h-20 rounded-[2px] border border-line object-contain"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeDraftAttachment(i)}
+                      aria-label="Remove attachment"
+                      className="mono absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-line bg-paper-2 text-[10px] text-ink-3 hover:text-rule"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <span
+                    key={i}
+                    className="mono flex items-center gap-1.5 rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[11px] text-ink-2"
+                  >
+                    📎 {a.name} ({a.charCount.toLocaleString()}c)
+                    <button
+                      type="button"
+                      onClick={() => removeDraftAttachment(i)}
+                      aria-label="Remove attachment"
+                      className="text-ink-3 hover:text-rule"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ),
+              )}
+            </div>
+          )}
           <div className="mono mt-1 flex justify-end gap-3 text-[10px] tracking-wide text-ink-3">
             <button onClick={cancelEdit} className="hover:text-ink">
               cancel
@@ -102,6 +174,7 @@ export function ChatMessage({
               <button
                 onClick={() => {
                   setDraft(content);
+                  setDraftAttachments(attachments ? [...attachments] : []);
                   setEditing(true);
                 }}
                 aria-label="Edit and resend"

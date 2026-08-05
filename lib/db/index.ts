@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { SCHEMA_SQL, type Conversation, type Message, type ConversationMode } from "./schema";
+import { SCHEMA_SQL, type Conversation, type Message, type ConversationMode, type Attachment } from "./schema";
 
 // Keep one connection across hot-reloads in dev so we don't lock the file.
 const globalForDb = globalThis as unknown as { __studygptDb?: Database.Database };
@@ -162,6 +162,17 @@ export function upsertMessage(
 
 export function updateMessageContent(id: string, content: string): void {
   db.prepare("UPDATE messages SET content = ? WHERE id = ?").run(content, id);
+}
+
+// Replace a user message's attachments during edit-and-resend. An empty array
+// or null clears them (the user removed all attachments in the edit UI).
+// Serializes consistently with addMessage: null when none, JSON otherwise.
+export function updateMessageAttachments(
+  id: string,
+  attachments: Attachment[] | null,
+): void {
+  const serialized = attachments && attachments.length > 0 ? JSON.stringify(attachments) : null;
+  db.prepare("UPDATE messages SET attachments = ? WHERE id = ?").run(serialized, id);
 }
 
 export function deleteMessage(id: string): void {
