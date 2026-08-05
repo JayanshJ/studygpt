@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Conversation } from "@/lib/db/schema";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface Props {
   conversations: Conversation[];
@@ -32,13 +33,16 @@ export function Sidebar({
           <span className="h-1.5 w-1.5 rounded-full bg-rule" />
           StudyGPT
         </span>
-        <Link
-          href="/settings"
-          aria-label="Settings"
-          className="mono text-ink-3 transition-colors hover:text-ink"
-        >
-          ⚙
-        </Link>
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+          <Link
+            href="/settings"
+            aria-label="Settings"
+            className="mono text-ink-3 transition-colors hover:text-ink"
+          >
+            ⚙
+          </Link>
+        </div>
       </header>
 
       <div className="px-3 pb-2">
