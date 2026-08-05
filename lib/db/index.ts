@@ -18,6 +18,11 @@ function open(): Database.Database {
   if (!inMemory) db.pragma("journal_mode = WAL"); // WAL requires a file-backed db
   db.pragma("foreign_keys = ON");
   for (const stmt of SCHEMA_SQL) db.exec(stmt);
+  // Additive migration: add conversations.project_id if missing (existing DBs).
+  const cols = db.prepare("PRAGMA table_info(conversations)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "project_id")) {
+    db.exec("ALTER TABLE conversations ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL");
+  }
   return db;
 }
 
@@ -39,18 +44,19 @@ export function getConversation(id: string): Conversation | undefined {
 }
 
 export function createConversation(
-  init: Pick<Conversation, "title" | "mode" | "model">,
+  init: Pick<Conversation, "title" | "mode" | "model"> & { projectId?: string | null },
 ): Conversation {
   const row: Conversation = {
     id: crypto.randomUUID(),
     title: init.title,
     mode: init.mode,
     model: init.model,
+    project_id: init.projectId ?? null,
     created_at: Date.now(),
   };
   db.prepare(
-    "INSERT INTO conversations (id, title, mode, model, created_at) VALUES (?, ?, ?, ?, ?)",
-  ).run(row.id, row.title, row.mode, row.model, row.created_at);
+    "INSERT INTO conversations (id, title, mode, model, project_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(row.id, row.title, row.mode, row.model, row.project_id, row.created_at);
   return row;
 }
 
@@ -165,3 +171,8 @@ export function getAllSettings(): Record<string, string> {
   }[];
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
+
+export * from "./projects";
+export * from "./materials";
+export * from "./sources";
+export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType } from "./schema";
