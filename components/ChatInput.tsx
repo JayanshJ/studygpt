@@ -132,8 +132,13 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
       if (res.ok) {
         setAddedToProject((prev) => new Set(prev).add(id));
       } else {
-        const err = await res.text();
-        setGateMsg(err || "Add to project failed.");
+        // /api/materials returns JSON errors { error: string }; fall back to a
+        // status-coded message if the body isn't JSON (transport errors etc.).
+        const err = await res.json().catch(() => ({}));
+        const detail =
+          (err && typeof err === "object" && "error" in err && typeof err.error === "string" && err.error) ||
+          `Add to project failed (${res.status}).`;
+        setGateMsg(detail);
       }
     } finally {
       setAddingToProject(null);
