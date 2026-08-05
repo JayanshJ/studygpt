@@ -32,6 +32,7 @@ export default function Page() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectMaterialCount, setActiveProjectMaterialCount] = useState<number | null>(null);
+  const [models, setModels] = useState<Array<{ id: string; vision: boolean }>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastRunRef = useRef<Parameters<typeof runChat>[0] | null>(null);
@@ -46,6 +47,11 @@ export default function Page() {
     if (res.ok) setProjects(await res.json());
   }, []);
 
+  const loadModels = useCallback(async () => {
+    const res = await fetch("/api/models");
+    if (res.ok) setModels((await res.json()).models ?? []);
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadConversations();
@@ -55,6 +61,11 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadProjects();
   }, [loadProjects]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadModels();
+  }, [loadModels]);
 
   // When a project conversation is active, fetch its material count for the
   // header chip. Reset to null for standalone conversations.
@@ -122,6 +133,18 @@ export default function Page() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
+    });
+    const updated: Conversation = await res.json();
+    setConversation(updated);
+    setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  }
+
+  async function changeModel(model: string) {
+    if (!conversation) return;
+    const res = await fetch(`/api/conversations/${conversation.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model }),
     });
     const updated: Conversation = await res.json();
     setConversation(updated);
@@ -395,9 +418,24 @@ export default function Page() {
                   </a>
                 );
               })()}
-              <span className="mono hidden rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[10px] tracking-wide text-ink-3 sm:inline">
-                {conversation.model}
-              </span>
+              <select
+                value={conversation.model}
+                onChange={(e) => changeModel(e.target.value)}
+                aria-label="Model"
+                className="mono max-w-[180px] truncate rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[10px] tracking-wide text-ink-3 outline-none focus:border-ink/40"
+              >
+                {/* Ensure the current model is always selectable even if the
+                    backend list is empty / doesn't include it. */}
+                {!models.some((m) => m.id === conversation.model) && (
+                  <option value={conversation.model}>{conversation.model}</option>
+                )}
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id}
+                    {m.vision ? "  ◉ vision" : ""}
+                  </option>
+                ))}
+              </select>
               <ModeToggle mode={conversation.mode} onChange={changeMode} />
             </div>
           )}
