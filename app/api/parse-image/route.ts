@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Tesseract from "tesseract.js";
+import { createWorker, type Worker } from "tesseract.js";
 
 // POST /api/parse-image — multipart { file }. OCRs an image to text via
 // tesseract.js so non-vision chat models can still ingest images (the parsing
@@ -7,11 +7,24 @@ import Tesseract from "tesseract.js";
 // route inlines it in place of an image part when the active model isn't
 // vision-capable. Vision-capable models still receive the raw image part.
 //
-// tesseract.js downloads its wasm core + `eng` traineddata to a cache dir on
-// first run; subsequent calls are local and fast. Non-fatal best-effort: a
-// failure or empty result returns an empty string so the chat route can mark
-// the image "(no text detected)" rather than blocking the send.
+// Performance: we keep ONE tesseract worker alive for the process (cached on
+// globalThis to survive Next dev HMR) instead of `Tesseract.recognize`, which
+// spawns a worker + reloads `eng.traineddata` on every call — that per-call
+// load was the dominant cost. Recognition still takes time on large images,
+// so the client also downscales to ~1600px before uploading. A single shared
+// worker serializes concurrent OCRs; fine for a single-user local app.
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB cap, same as /api/extract
+
+const globalForOcr = globalThis as unknown as { __ocrWorker?: Promise<Worker> };
+
+function getWorker(): Promise<Worker> {
+  if (!globalForOcr.__ocrWorker) {
+    // createWorker('eng') loads the wasm core + eng traineddata once and keeps
+    // the worker resident for reuse across requests.
+    globalForOcr.__ocrWorker = createWorker("eng");
+  }
+  return globalForOcr.__ocrWorker;
+}
 
 export async function POST(req: Request) {
   const contentType = req.headers.get("content-type") || "";
@@ -32,7 +45,8 @@ export async function POST(req: Request) {
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const { data } = await Tesseract.recognize(buffer, "eng");
+    const worker = await getWorker();
+    const { data } = await worker.recognize(buffer);
     const text = (data?.text ?? "").trim();
     return NextResponse.json({ text, charCount: text.length });
   } catch (err) {

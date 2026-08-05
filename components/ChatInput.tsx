@@ -15,6 +15,63 @@ interface Props {
 const TEXT_ACCEPT =
   ".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.c,.cc,.cpp,.h,.hpp,.cs,.php,.swift,.sh,.bash,.sql,.html,.htm,.css,.scss,.toml,.ini,.env,.log,.xml";
 
+// Largest dimension (px) we downscale an attached image to before storing and
+// OCR. Phone screenshots/photos at 3000px+ make tesseract slow and bloat the
+// stored data URL; ~1600px keeps text legible for OCR while cutting recognition
+// time and DB size sharply. Photos become JPEG, screenshots stay PNG so text
+// stays sharp.
+const MAX_DIM = 1600;
+
+function downscaleImage(file: File): Promise<{ blob: File; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas 2D context unavailable"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, w, h);
+      const isPng = file.type === "image/png";
+      const type = isPng ? "image/png" : "image/jpeg";
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Canvas toBlob failed"));
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = typeof reader.result === "string" ? reader.result : "";
+            if (!dataUrl) {
+              reject(new Error("dataURL read failed"));
+              return;
+            }
+            resolve({ blob: new File([blob], file.name, { type }), dataUrl });
+          };
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        },
+        type,
+        isPng ? undefined : 0.92,
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Image decode failed"));
+    };
+    img.src = url;
+  });
+}
+
 export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, projectId }: Props) {
   const [value, setValue] = useState("");
   const [pending, setPending] = useState<Array<{ id: string; attachment: Attachment; file?: File }>>([]);
@@ -50,23 +107,32 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
   }, [value]);
 
   // Add an image attachment. All models accept images: vision-capable models
+  // Add an image attachment. All models accept images: vision-capable models
   // get the raw image part server-side; text-only models get the OCR'd text
   // inlined instead. We OCR here at attach time so the parsed text travels with
   // the persisted attachment and is reused on every turn (and survives a later
-  // model switch) rather than re-parsing each turn.
-  function addImageFile(file: File) {
+  // model switch) rather than re-parsing each turn. Images are downscaled
+  // (module-scope downscaleImage) before storing/OCR — see MAX_DIM above.
+  async function addImageFile(file: File) {
     const id = crypto.randomUUID();
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === "string" ? reader.result : "";
-      if (!dataUrl) return;
-      setPending((prev) => [
-        ...prev,
-        { id, attachment: { type: "image", name: file.name, mime: file.type, dataUrl }, file },
-      ]);
-      void parseImage(id, file);
-    };
-    reader.readAsDataURL(file);
+    let stored: { blob: File; dataUrl: string };
+    try {
+      stored = await downscaleImage(file);
+    } catch {
+      // Downscale can fail on exotic formats; fall back to the original file.
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(typeof r.result === "string" ? r.result : "");
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+      }).catch(() => "");
+      stored = { blob: file, dataUrl };
+    }
+    setPending((prev) => [
+      ...prev,
+      { id, attachment: { type: "image", name: file.name, mime: stored.blob.type, dataUrl: stored.dataUrl }, file: stored.blob },
+    ]);
+    await parseImage(id, stored.blob);
   }
 
   async function parseImage(id: string, file: File) {
