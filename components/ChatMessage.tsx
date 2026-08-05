@@ -5,11 +5,14 @@ import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { CodeBlock } from "./CodeBlock";
+import { SourcesPanel } from "./SourcesPanel";
+import type { SourceEntry } from "@/lib/db/schema";
 
 interface Props {
   role: "user" | "assistant" | "system";
   content: string;
   streaming?: boolean;
+  sources?: SourceEntry[];
   onCopy?: () => void;
   onRegenerate?: () => void;
   onEdit?: (newContent: string) => void;
@@ -20,6 +23,7 @@ export function ChatMessage({
   role,
   content,
   streaming,
+  sources,
   onCopy,
   onRegenerate,
   onEdit,
@@ -142,6 +146,7 @@ export function ChatMessage({
             <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
           )}
         </div>
+        {!streaming && <SourcesPanel sources={sources ?? []} />}
       </div>
     </div>
   );

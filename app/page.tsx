@@ -5,7 +5,16 @@ import { Sidebar } from "@/components/Sidebar";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { ModeToggle } from "@/components/ModeToggle";
-import type { Conversation, ConversationMode, Message } from "@/lib/db/schema";
+import type {
+  Conversation,
+  ConversationMode,
+  Material,
+  Message,
+  Project,
+  SourceEntry,
+} from "@/lib/db/schema";
+
+type MessageWithSources = Message & { sources?: SourceEntry[] };
 
 type ChatAction = "send" | "regenerate" | "edit";
 
@@ -13,12 +22,16 @@ export default function Page() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<MessageWithSources[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assistantStreamId, setAssistantStreamId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- setActiveProjectId is wired up by Task 8 (sidebar ProjectSwitcher)
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeProjectMaterialCount, setActiveProjectMaterialCount] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastRunRef = useRef<Parameters<typeof runChat>[0] | null>(null);
@@ -28,10 +41,41 @@ export default function Page() {
     if (res.ok) setConversations(await res.json());
   }, []);
 
+  const loadProjects = useCallback(async () => {
+    const res = await fetch("/api/projects");
+    if (res.ok) setProjects(await res.json());
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadConversations();
   }, [loadConversations]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadProjects();
+  }, [loadProjects]);
+
+  // When a project conversation is active, fetch its material count for the
+  // header chip. Reset to null for standalone conversations.
+  useEffect(() => {
+    const pid = conversation?.project_id ?? null;
+    if (!pid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveProjectMaterialCount(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/projects/${pid}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { project: Project; materials: Material[] } | null) => {
+        if (!cancelled && d) setActiveProjectMaterialCount(d.materials.length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation?.project_id]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -53,7 +97,7 @@ export default function Page() {
     const res = await fetch("/api/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ projectId: activeProjectId }),
     });
     const conv: Conversation = await res.json();
     setConversations((prev) => [conv, ...prev]);
@@ -90,9 +134,9 @@ export default function Page() {
   // persists per `action`.
   async function runChat(args: {
     action: ChatAction;
-    history: Message[];
+    history: MessageWithSources[];
     assistantId: string;
-    baseDisplay: Message[];
+    baseDisplay: MessageWithSources[];
     userMessageId?: string;
     replaceAssistantId?: string;
     editMessageId?: string;
@@ -102,7 +146,7 @@ export default function Page() {
     if (!conv) return;
     lastRunRef.current = args;
     setError(null);
-    const assistantMsg: Message = {
+    const assistantMsg: MessageWithSources = {
       id: args.assistantId,
       conversation_id: conv.id,
       role: "assistant",
@@ -149,6 +193,18 @@ export default function Page() {
           prev.map((m) => (m.id === args.assistantId ? { ...m, content: acc } : m)),
         );
       }
+
+      // Fetch sources written by the server before streaming (RAG).
+      fetch(`/api/messages/${args.assistantId}`)
+        .then((r) => r.json())
+        .then((d: { sources?: SourceEntry[] }) => {
+          if (d.sources?.length) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === args.assistantId ? { ...m, sources: d.sources } : m)),
+            );
+          }
+        })
+        .catch(() => {});
     } catch (err) {
       if (controller.signal.aborted) {
         if (acc) {
@@ -182,7 +238,7 @@ export default function Page() {
 
   async function sendMessage(text: string) {
     if (!conversation || streaming) return;
-    const userMsg: Message = {
+    const userMsg: MessageWithSources = {
       id: crypto.randomUUID(),
       conversation_id: conversation.id,
       role: "user",
@@ -239,7 +295,7 @@ export default function Page() {
     if (!conversation || streaming) return;
     const idx = messages.findIndex((m) => m.id === messageId);
     if (idx === -1) return;
-    const edited: Message = { ...messages[idx], content: newContent };
+    const edited: MessageWithSources = { ...messages[idx], content: newContent };
     const history = [...messages.slice(0, idx), edited]; // drop everything after
     await runChat({
       action: "edit",
@@ -311,6 +367,23 @@ export default function Page() {
           </div>
           {conversation && (
             <div className="flex shrink-0 items-center gap-3">
+              {conversation.project_id && (() => {
+                const p = projects.find((x) => x.id === conversation.project_id);
+                if (!p) return null;
+                return (
+                  <a
+                    href="/projects"
+                    className="mono hidden items-center gap-1 rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[10px] tracking-wide text-feynman transition-colors hover:text-ink sm:inline-flex"
+                  >
+                    {p.name}
+                    {activeProjectMaterialCount !== null && (
+                      <span className="text-ink-3">
+                        · {activeProjectMaterialCount} material{activeProjectMaterialCount === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </a>
+                );
+              })()}
               <span className="mono hidden rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[10px] tracking-wide text-ink-3 sm:inline">
                 {conversation.model}
               </span>
@@ -340,6 +413,7 @@ export default function Page() {
                 role={m.role}
                 content={m.content}
                 streaming={streaming && m.id === assistantStreamId}
+                sources={m.sources}
                 canRegenerate={m.id === lastAssistantId}
                 onRegenerate={regenerate}
                 onEdit={(content) => editMessage(m.id, content)}
