@@ -30,8 +30,18 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const baseRef = useRef("");
   const visionEnabled = isVisionModel(model);
-  const speechSupported =
-    typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  // Start false so the server and the client's first render agree (no mic
+  // button), then detect Web Speech support after mount. Computing this during
+  // render would be false on the server and true on the client → hydration
+  // mismatch on the mic button.
+  const [speechSupported, setSpeechSupported] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSpeechSupported(
+      typeof window !== "undefined" &&
+        !!(window.SpeechRecognition || window.webkitSpeechRecognition),
+    );
+  }, []);
 
   // Grow to fit content, capped at ~6 lines, then scroll.
   useEffect(() => {
