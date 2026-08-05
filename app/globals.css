@@ -104,6 +104,9 @@ body {
   border-radius: 3px;
 }
 html[data-theme="dark"] .prose-chat code { background: rgba(236, 234, 216, 0.10); }
+/* Assistant message bubble — the hardcoded light-tint shadow is invisible on
+   dark paper; re-apply a subtle dark shadow so the card keeps its elevation. */
+html[data-theme="dark"] .msg-bubble { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.30); }
 .prose-chat pre {
   background: var(--paper-3);
   border: 1px solid var(--line);
