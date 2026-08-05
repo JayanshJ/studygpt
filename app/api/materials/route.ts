@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createMaterial, getMaterial, getProject, updateMaterialStatus } from "@/lib/db";
+import { getModelConfig, getProvider } from "@/lib/llm/provider";
 import { extractPdf, extractUrl, ingestFromText } from "@/lib/ingest";
 
 // POST /api/materials — multipart/form-data: { projectId, title?, file? | url? }
@@ -42,6 +43,23 @@ export async function POST(req: Request) {
     sourceType,
     sourceRef,
   });
+
+  // Preflight the embedding model before extraction+ingestion. If the
+  // embedding model (default nomic-embed-text) isn't pulled, ingestion would
+  // otherwise throw a messy Ollama API error; this surfaces the clean
+  // "Pull it with `ollama pull nomic-embed-text`" message instead.
+  try {
+    const cfg = getModelConfig();
+    const provider = getProvider(cfg.provider);
+    if (provider.validateEmbedding) {
+      await provider.validateEmbedding({ model: cfg.embeddingModel, baseURL: cfg.baseURL, apiKey: cfg.apiKey });
+    }
+  } catch (err) {
+    updateMaterialStatus(material.id, "error", {
+      error: err instanceof Error ? err.message : "Embedding model unavailable",
+    });
+    return NextResponse.json(getMaterial(material.id), { status: 502 });
+  }
 
   // Extract + ingest synchronously. On failure, mark the material errored.
   try {

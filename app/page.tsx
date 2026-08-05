@@ -192,18 +192,6 @@ export default function Page() {
           prev.map((m) => (m.id === args.assistantId ? { ...m, content: acc } : m)),
         );
       }
-
-      // Fetch sources written by the server before streaming (RAG).
-      fetch(`/api/messages/${args.assistantId}`)
-        .then((r) => r.json())
-        .then((d: { sources?: SourceEntry[] }) => {
-          if (d.sources?.length) {
-            setMessages((prev) =>
-              prev.map((m) => (m.id === args.assistantId ? { ...m, sources: d.sources } : m)),
-            );
-          }
-        })
-        .catch(() => {});
     } catch (err) {
       if (controller.signal.aborted) {
         if (acc) {
@@ -229,6 +217,21 @@ export default function Page() {
         setMessages((prev) => prev.filter((m) => m.id !== args.assistantId));
       }
     } finally {
+      // Sources fetch lives in `finally` so the Sources panel populates on
+      // both normal completion AND a mid-stream abort. The server writes the
+      // message_sources row before streaming starts, so it already exists.
+      // Fire-and-forget: the .then merge is a no-op if the assistant message
+      // was dropped (e.g. stop-before-any-token in the catch branch above).
+      fetch(`/api/messages/${args.assistantId}`)
+        .then((r) => r.json())
+        .then((d: { sources?: SourceEntry[] }) => {
+          if (d.sources?.length) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === args.assistantId ? { ...m, sources: d.sources } : m)),
+            );
+          }
+        })
+        .catch(() => {});
       setStreaming(false);
       setAssistantStreamId(null);
       abortRef.current = null;

@@ -1,6 +1,6 @@
 import { extractText, getMeta, getDocumentProxy } from "unpdf";
 import { convert as htmlToText } from "html-to-text";
-import { updateMaterialStatus, addChunk } from "@/lib/db/materials";
+import { updateMaterialStatus, addChunks } from "@/lib/db/materials";
 import { embedManyTexts, encodeEmbedding } from "@/lib/embed";
 
 const TARGET = 800;
@@ -30,6 +30,11 @@ export async function extractPdf(
 export async function extractUrl(
   url: string,
 ): Promise<{ text: string; title?: string }> {
+  // SSRF limitation: this follows an arbitrary user-supplied URL with no
+  // private/loopback/metadata-address blocking. Accepted for the local
+  // single-user MVP. Before any non-local deployment, mitigate with a
+  // scheme allow-list + private-range (10/8, 172.16/12, 192.168/16, 127/8,
+  // 169.254/16, ::1, fc00::/7) check on the resolved address.
   const res = await fetch(url, {
     signal: AbortSignal.timeout(15000),
     headers: { "User-Agent": "StudyGPT/1.0 (study companion)" },
@@ -122,9 +127,12 @@ export async function ingestFromText(materialId: string, text: string): Promise<
       return;
     }
     const embeddings = await embedManyTexts(chunks);
-    for (let i = 0; i < chunks.length; i++) {
-      addChunk(materialId, i, chunks[i], encodeEmbedding(embeddings[i]));
-    }
+    // Insert all chunks in one transaction so a mid-loop failure leaves no
+    // partial chunks. A throw propagates to the catch → updateMaterialStatus(error).
+    addChunks(
+      materialId,
+      chunks.map((c, i) => ({ text: c, embedding: encodeEmbedding(embeddings[i]), ordinal: i })),
+    );
     updateMaterialStatus(materialId, "ready", { charCount: text.length, text });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Ingestion failed";

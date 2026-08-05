@@ -64,6 +64,24 @@ export function addChunk(materialId: string, ordinal: number, text: string, embe
   ).run(crypto.randomUUID(), materialId, ordinal, text, embedding, Date.now());
 }
 
+// Insert all chunks for a material inside a single transaction so a mid-loop
+// failure leaves no partial chunks. Used by ingestFromText.
+export function addChunks(
+  materialId: string,
+  chunks: { text: string; embedding: Buffer; ordinal: number }[],
+): void {
+  const insert = db.prepare(
+    "INSERT INTO chunks (id, material_id, ordinal, text, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  const run = db.transaction((rows: { text: string; embedding: Buffer; ordinal: number }[]) => {
+    const now = Date.now();
+    for (const r of rows) {
+      insert.run(crypto.randomUUID(), materialId, r.ordinal, r.text, r.embedding, now);
+    }
+  });
+  run(chunks);
+}
+
 // All chunks (with embedding + material title) for a project's READY materials.
 export function listChunkEmbeddingsForProject(projectId: string): {
   chunkId: string;

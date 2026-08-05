@@ -69,6 +69,12 @@ export function updateConversationTitle(id: string, title: string): void {
 }
 
 export function deleteConversation(id: string): void {
+  // message_sources has no FK to messages by design (setMessageSources runs
+  // before the assistant messages row exists), so conversation delete does
+  // NOT cascade to it. Sweep manually BEFORE the conversation DELETE so the
+  // messages rows still exist to select from (messages→conversations is
+  // ON DELETE CASCADE, so the conversation DELETE would remove them after).
+  db.prepare("DELETE FROM message_sources WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?)").run(id);
   db.prepare("DELETE FROM conversations WHERE id = ?").run(id);
 }
 
@@ -135,6 +141,9 @@ export function updateMessageContent(id: string, content: string): void {
 
 export function deleteMessage(id: string): void {
   db.prepare("DELETE FROM messages WHERE id = ?").run(id);
+  // message_sources has no FK to messages by design (setMessageSources runs
+  // before the assistant messages row exists), so manual cleanup is required.
+  db.prepare("DELETE FROM message_sources WHERE message_id = ?").run(id);
 }
 
 // Delete every message in the conversation strictly after `messageId`
@@ -144,6 +153,11 @@ export function deleteMessagesAfter(conversationId: string, messageId: string): 
     | { created_at: number }
     | undefined;
   if (!anchor) return;
+  // message_sources has no FK to messages by design → manual cleanup of the
+  // same tail rows we're about to delete from messages.
+  db.prepare(
+    "DELETE FROM message_sources WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ? AND created_at > ?)",
+  ).run(conversationId, anchor.created_at);
   db.prepare(
     "DELETE FROM messages WHERE conversation_id = ? AND created_at > ?",
   ).run(conversationId, anchor.created_at);
