@@ -13,6 +13,7 @@ export async function POST(req: Request) {
   let title: string | undefined;
   let url: string | undefined;
   let pdfBytes: Uint8Array | undefined;
+  let fileName: string | undefined;
 
   if (contentType.includes("multipart/form-data")) {
     const form = await req.formData();
@@ -20,7 +21,10 @@ export async function POST(req: Request) {
     title = (form.get("title") as string) || undefined;
     url = (form.get("url") as string) || undefined;
     const file = form.get("file");
-    if (file && file instanceof File) pdfBytes = new Uint8Array(await file.arrayBuffer());
+    if (file && file instanceof File) {
+      pdfBytes = new Uint8Array(await file.arrayBuffer());
+      fileName = file.name;
+    }
   } else {
     const body = await req.json().catch(() => ({}));
     projectId = body.projectId;
@@ -36,7 +40,10 @@ export async function POST(req: Request) {
   }
 
   const sourceType = pdfBytes ? "pdf" : "url";
-  const sourceRef = pdfBytes ? title || "uploaded.pdf" : url!;
+  // For PDFs, prefer the uploaded filename (stripped of .pdf) as the reference
+  // and title fallback — so materials are named after the file, not "uploaded.pdf".
+  const baseName = fileName ? fileName.replace(/\.pdf$/i, "") : undefined;
+  const sourceRef = pdfBytes ? baseName || title || "uploaded.pdf" : url!;
   const material = createMaterial({
     projectId,
     title: title?.trim() || sourceRef,

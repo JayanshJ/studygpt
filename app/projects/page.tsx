@@ -110,21 +110,50 @@ export default function ProjectsPage() {
     await loadProjects();
   }
 
-  async function addPdf(file: File) {
-    if (!selectedId) return;
-    setStatusMsg("Uploading PDF…");
+  // Upload a single PDF. `title` (may be "") overrides the shared addTitle
+  // field — used so multi-file uploads name each material after its filename
+  // instead of stamping the same title on every file. Returns null on success
+  // or an error message on failure (caller aggregates per-file results).
+  async function addPdf(file: File, title: string): Promise<string | null> {
+    if (!selectedId) return null;
     const form = new FormData();
     form.append("projectId", selectedId);
     form.append("file", file);
-    if (addTitle.trim()) form.append("title", addTitle.trim());
+    const t = title.trim();
+    if (t) form.append("title", t);
     const res = await fetch("/api/materials", { method: "POST", body: form });
-    setStatusMsg(null);
-    if (res.ok) {
-      setAddTitle("");
+    if (res.ok) return null;
+    const err = await res.text();
+    return err || "PDF upload failed";
+  }
+
+  // Upload one or more PDFs sequentially. Sequential (not parallel) so we
+  // don't fan out concurrent embedding batches onto Ollama mid-ingest, and so
+  // each material appears in the list as soon as it's ready. Progress is shown
+  // per file; per-file failures are aggregated into a single status message.
+  async function addPdfs(files: FileList | File[]) {
+    if (!selectedId) return;
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    const errors: string[] = [];
+    for (let i = 0; i < list.length; i++) {
+      // A single-file upload honors the shared title field; a multi-file
+      // upload leaves each to fall back to its filename (cleaner than naming
+      // them all the same).
+      const title = list.length === 1 ? addTitle : "";
+      setStatusMsg(`Uploading PDF ${i + 1}/${list.length}…`);
+      const err = await addPdf(list[i], title);
+      if (err) errors.push(`${list[i].name}: ${err}`);
       await loadMaterials(selectedId);
-    } else {
-      const err = await res.text();
-      setStatusMsg(err || "PDF upload failed");
+    }
+    setStatusMsg(null);
+    setAddTitle("");
+    if (errors.length) {
+      setStatusMsg(
+        errors.length === list.length
+          ? `All ${list.length} uploads failed — ${errors[0]}`
+          : `${list.length - errors.length}/${list.length} uploaded; ${errors.length} failed`,
+      );
     }
   }
 
@@ -309,16 +338,17 @@ export default function ProjectsPage() {
                       onClick={() => fileInputRef.current?.click()}
                       className="mono rounded-[3px] border border-line bg-paper px-3 py-1.5 text-[12px] tracking-wide text-ink transition-colors hover:border-ink/40"
                     >
-                      + upload PDF
+                      + upload PDFs
                     </button>
                     <input
                       ref={fileInputRef}
                       type="file"
                       accept="application/pdf"
+                      multiple
                       className="hidden"
                       onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) addPdf(f);
+                        const files = e.target.files;
+                        if (files && files.length > 0) addPdfs(files);
                         e.target.value = "";
                       }}
                     />
