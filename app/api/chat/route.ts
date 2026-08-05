@@ -6,6 +6,7 @@ import {
   addMessage,
   upsertMessage,
   updateMessageContent,
+  updateMessageAttachments,
   deleteMessage,
   deleteMessagesAfter,
   updateConversationTitle,
@@ -27,6 +28,7 @@ interface ChatBody {
   replaceAssistantId?: string;
   editMessageId?: string;
   editContent?: string;
+  editAttachments?: Attachment[] | null;
 }
 
 // Unfold a message's attachments into AI SDK message content. With no
@@ -49,6 +51,32 @@ function toModelContent(content: string, attachments?: Attachment[]) {
   return parts;
 }
 
+// How many of the most recent user turns keep their IMAGE attachments in
+// context. Older turns than this drop images too. Bounding this stops a long
+// conversation from re-sending every past image (and its base64 data URL) on
+// every turn — the main source of context + request-body bloat.
+const RECENT_IMAGE_TURNS = 3;
+
+// Bound the attachments sent for a given user message index within `messages`:
+// - the latest user turn → full attachments (file text + images) so the model
+//   can answer the current question;
+// - an older turn → drop file text (one-shot context already consumed on the
+//   turn it was sent) and keep images only if the turn is among the last
+//   RECENT_IMAGE_TURNS user turns (multi-turn vision), else drop everything.
+function attachmentsForTurn(
+  msg: { attachments?: Attachment[] },
+  i: number,
+  lastUserIdx: number | undefined,
+  keepImageIdx: Set<number>,
+): Attachment[] | undefined {
+  const atts = msg.attachments;
+  if (!atts || atts.length === 0) return undefined;
+  if (i === lastUserIdx) return atts;
+  if (!keepImageIdx.has(i)) return undefined;
+  const images = atts.filter((a): a is Extract<Attachment, { type: "image" }> => a.type === "image");
+  return images.length ? images : undefined;
+}
+
 // POST { conversationId, messages, action, ...ids }
 // Streams the assistant reply as plain text. Persists per `action` before
 // streaming and the assistant reply (upsert under assistantMessageId) in
@@ -69,6 +97,7 @@ export async function POST(req: Request) {
     replaceAssistantId,
     editMessageId,
     editContent,
+    editAttachments,
   } = body;
   if (!conversationId || !Array.isArray(messages)) {
     return new Response("Missing conversationId or messages", { status: 400 });
@@ -107,6 +136,12 @@ export async function POST(req: Request) {
     } else if (action === "edit") {
       if (editMessageId && editContent !== undefined) {
         updateMessageContent(editMessageId, editContent);
+        // An edit can drop attachments the user removed in the edit UI. Only
+        // touch attachments when the client explicitly sent editAttachments
+        // (undefined = legacy callers that don't manage attachments).
+        if (editAttachments !== undefined) {
+          updateMessageAttachments(editMessageId, editAttachments);
+        }
         deleteMessagesAfter(conversationId, editMessageId);
       }
     }
@@ -164,12 +199,23 @@ export async function POST(req: Request) {
       }
     }
 
+    // Precompute which user turns still carry attachments when sent to the
+    // model: the latest user turn keeps everything; the last RECENT_IMAGE_TURNS
+    // user turns keep their images; everything older is stripped to plain
+    // text. See attachmentsForTurn / RECENT_IMAGE_TURNS above.
+    const userIdx = messages.map((m, i) => (m.role === "user" ? i : -1)).filter((i) => i >= 0);
+    const lastUserIdx = userIdx[userIdx.length - 1];
+    const keepImageIdx = new Set(userIdx.slice(-RECENT_IMAGE_TURNS));
+
     const result = streamText({
       model,
       system: systemPromptFor(conv.mode) + contextBlock,
-      messages: messages.map((m) =>
+      messages: messages.map((m, i) =>
         m.role === "user"
-          ? { role: "user" as const, content: toModelContent(m.content, m.attachments) }
+          ? {
+              role: "user" as const,
+              content: toModelContent(m.content, attachmentsForTurn(m, i, lastUserIdx, keepImageIdx)),
+            }
           : { role: m.role, content: m.content },
       ),
       abortSignal: req.signal,
