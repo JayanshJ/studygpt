@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   deleteConversation,
   getConversation,
+  getMessageSources,
   listMessages,
   updateConversationMode,
   updateConversationTitle,
@@ -16,7 +17,14 @@ export async function GET(
   const { id } = await params;
   const conv = getConversation(id);
   if (!conv) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ conversation: conv, messages: listMessages(id) });
+  // Attach `sources` to assistant messages that have any, so the UI can cite
+  // which material chunks backed each answer (empty arrays omitted).
+  const messages = listMessages(id).map((m) =>
+    m.role === "assistant" && getMessageSources(m.id).length
+      ? { ...m, sources: getMessageSources(m.id) }
+      : m,
+  );
+  return NextResponse.json({ conversation: conv, messages });
 }
 
 // PATCH /api/conversations/[id] — update mode and/or title.

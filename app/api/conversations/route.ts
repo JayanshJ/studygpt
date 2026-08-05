@@ -10,12 +10,13 @@ export async function GET() {
 // POST /api/conversations — create a new conversation.
 // Body: { title?, mode? }  (model defaults to the live settings model)
 export async function POST(req: Request) {
-  const { title, mode } = await req.json().catch(() => ({}));
+  const { title, mode, projectId } = await req.json().catch(() => ({}));
   const cfg = getModelConfig();
   const conv = createConversation({
     title: title || "New conversation",
     mode: mode === "feynman" ? "feynman" : "chat",
     model: cfg.model,
+    projectId: typeof projectId === "string" ? projectId : null,
   });
   return NextResponse.json(conv, { status: 201 });
 }
