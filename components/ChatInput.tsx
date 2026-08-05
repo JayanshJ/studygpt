@@ -24,9 +24,14 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
   const [addedToProject, setAddedToProject] = useState<Set<string>>(new Set());
   const [addingToProject, setAddingToProject] = useState<string | null>(null);
   const [gateMsg, setGateMsg] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const baseRef = useRef("");
   const visionEnabled = isVisionModel(model);
+  const speechSupported =
+    typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
   // Grow to fit content, capped at ~6 lines, then scroll.
   useEffect(() => {
@@ -147,6 +152,36 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
     }
   }
 
+  function toggleVoice() {
+    if (!speechSupported) return;
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
+    baseRef.current = value;
+    rec.onresult = (e: SpeechRecognitionEvent) => {
+      let final = "";
+      let interim = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) final += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      setValue(baseRef.current + final + interim);
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    recognitionRef.current = rec;
+    setListening(true);
+    rec.start();
+  }
+
   return (
     <form onSubmit={onSubmit} className="px-4 pb-5 pt-2">
       {gateMsg && (
@@ -210,6 +245,22 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
           >
             +
           </button>
+          {speechSupported && (
+            <button
+              type="button"
+              onClick={toggleVoice}
+              disabled={disabled}
+              title={listening ? "Stop voice typing" : "Voice type"}
+              aria-label={listening ? "Stop voice typing" : "Voice type"}
+              className={`mono shrink-0 rounded-[3px] border px-2 py-1.5 text-[12px] tracking-wide transition-colors disabled:opacity-40 ${
+                listening
+                  ? "border-rule text-rule hover:bg-rule/10"
+                  : "border-line bg-paper text-ink-2 hover:border-ink/40"
+              }`}
+            >
+              {listening ? "●" : "🎙"}
+            </button>
+          )}
           <textarea
             ref={ref}
             value={value}
