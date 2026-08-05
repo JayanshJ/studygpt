@@ -78,24 +78,52 @@ body {
   letter-spacing: 0.01em;
 }
 
-/* ---- Markdown rendered chat content ---- */
+/* ---- Markdown rendered chat content ----
+   Read-first: comfortable line-height and generous block spacing so the
+   model's structured answers (headings, lists, emphasis) read as distinct
+   sections rather than a cramped wall of text. Graph Paper Lab tokens only. */
 .prose-chat {
   font-size: 1rem;
-  line-height: 1.65;
+  line-height: 1.72;
 }
-.prose-chat p { margin: 0.55em 0; }
+.prose-chat > * + * { margin-top: 0.85em; }
+.prose-chat p { margin: 0; }
 .prose-chat p:first-child { margin-top: 0; }
 .prose-chat p:last-child { margin-bottom: 0; }
-.prose-chat h1, .prose-chat h2, .prose-chat h3 {
+
+/* Headings — clear section hierarchy. h1/h2 carry a hairline rule beneath so
+   a new section is visually announced, not just bolder text. */
+.prose-chat h1, .prose-chat h2, .prose-chat h3, .prose-chat h4 {
   font-weight: 600;
   line-height: 1.25;
-  margin: 1em 0 0.35em;
+  color: var(--ink);
+  margin: 1.4em 0 0.5em;
 }
-.prose-chat h1 { font-size: 1.25rem; }
-.prose-chat h2 { font-size: 1.1rem; }
-.prose-chat h3 { font-size: 1rem; }
-.prose-chat ul, .prose-chat ol { margin: 0.5em 0; padding-left: 1.35em; }
-.prose-chat li { margin: 0.2em 0; }
+.prose-chat h1 { font-size: 1.38rem; padding-bottom: 0.28em; border-bottom: 1px solid var(--line); }
+.prose-chat h2 { font-size: 1.2rem;  padding-bottom: 0.24em; border-bottom: 1px solid var(--line); }
+.prose-chat h3 { font-size: 1.04rem; }
+.prose-chat h4 { font-size: 0.98rem; color: var(--ink-2); }
+/* The first child of a bubble shouldn't kick off with a big top gap. */
+.prose-chat > h1:first-child,
+.prose-chat > h2:first-child,
+.prose-chat > h3:first-child,
+.prose-chat > h4:first-child { margin-top: 0; }
+
+.prose-chat ul, .prose-chat ol { margin: 0.25em 0; padding-left: 1.5em; }
+.prose-chat li { margin: 0.35em 0; }
+.prose-chat li > ul, .prose-chat li > ol { margin: 0.35em 0; }
+/* Tight lists (no blank lines between items in source) stay a touch tighter. */
+.prose-chat li + li { margin-top: 0.35em; }
+.prose-chat ul { list-style: disc; }
+.prose-chat ol { list-style: decimal; }
+
+/* Horizontal rule — a clean section break on the page grid. */
+.prose-chat hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 1.4em 0;
+}
+
 .prose-chat code {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.85em;
@@ -113,7 +141,7 @@ html[data-theme="dark"] .msg-bubble { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
   padding: 0.85em 1em;
   border-radius: 4px;
   overflow-x: auto;
-  margin: 0.7em 0;
+  margin: 0.4em 0;
   font-size: 0.85rem;
 }
 .prose-chat pre code {
@@ -123,19 +151,22 @@ html[data-theme="dark"] .msg-bubble { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
 }
 .prose-chat blockquote {
   border-left: 2px solid var(--rule);
-  padding-left: 0.9em;
+  padding: 0.1em 0 0.1em 0.95em;
   color: var(--ink-2);
   font-style: italic;
-  margin: 0.7em 0;
+  margin: 0.4em 0;
 }
 .prose-chat a {
   color: var(--rule);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.prose-chat table { border-collapse: collapse; margin: 0.7em 0; font-size: 0.9rem; }
-.prose-chat th, .prose-chat td { border: 1px solid var(--line); padding: 0.3em 0.6em; }
-.prose-chat strong { font-weight: 600; }
+.prose-chat table { border-collapse: collapse; margin: 0.4em 0; font-size: 0.92rem; }
+.prose-chat th, .prose-chat td { border: 1px solid var(--line); padding: 0.45em 0.75em; }
+.prose-chat th { background: var(--paper-3); font-weight: 600; text-align: left; }
+/* Emphasis that actually reads: heavier weight + ink so bolded answers pop. */
+.prose-chat strong { font-weight: 700; color: var(--ink); }
+.prose-chat em { font-style: italic; }
 
 /* KaTeX should inherit ink and sit on the line. */
 .prose-chat .katex { font-size: 1.05em; color: var(--ink); }
