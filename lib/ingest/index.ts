@@ -2,6 +2,7 @@ import { extractText, getMeta, getDocumentProxy } from "unpdf";
 import { convert as htmlToText } from "html-to-text";
 import { updateMaterialStatus, addChunks } from "@/lib/db/materials";
 import { embedManyTexts, encodeEmbedding } from "@/lib/embed";
+import { safeFetch } from "./ssrf";
 
 const TARGET = 800;
 const OVERLAP = 100;
@@ -30,15 +31,13 @@ export async function extractPdf(
 export async function extractUrl(
   url: string,
 ): Promise<{ text: string; title?: string }> {
-  // SSRF limitation: this follows an arbitrary user-supplied URL with no
-  // private/loopback/metadata-address blocking. Accepted for the local
-  // single-user MVP. Before any non-local deployment, mitigate with a
-  // scheme allow-list + private-range (10/8, 172.16/12, 192.168/16, 127/8,
-  // 169.254/16, ::1, fc00::/7) check on the resolved address.
-  const res = await fetch(url, {
+  // SSRF guard: scheme allow-list + private/loopback/link-local/metadata
+  // range blocking on every resolved address, with manual redirect handling
+  // so a public URL can't 302 to an internal host. See lib/ingest/ssrf.ts.
+  // Residual (documented there): DNS rebinding is not fully closed.
+  const res = await safeFetch(url, {
     signal: AbortSignal.timeout(15000),
     headers: { "User-Agent": "StudyGPT/1.0 (study companion)" },
-    redirect: "follow",
   });
   if (!res.ok) throw new Error(`Fetch failed (${res.status}) for ${url}`);
   const html = await res.text();
