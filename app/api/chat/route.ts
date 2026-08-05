@@ -13,20 +13,40 @@ import {
   setMessageSources,
 } from "@/lib/db";
 import { embedText, decodeEmbedding, cosine } from "@/lib/embed";
-import type { SourceEntry } from "@/lib/db";
+import type { SourceEntry, Attachment } from "@/lib/db";
 
 type ChatRole = "user" | "assistant" | "system";
 type Action = "send" | "regenerate" | "edit";
 
 interface ChatBody {
   conversationId?: string;
-  messages?: { role: ChatRole; content: string }[];
+  messages?: { role: ChatRole; content: string; attachments?: Attachment[] }[];
   action?: Action;
   userMessageId?: string;
   assistantMessageId?: string;
   replaceAssistantId?: string;
   editMessageId?: string;
   editContent?: string;
+}
+
+// Unfold a message's attachments into AI SDK message content. With no
+// attachments, content stays a plain string (unchanged behavior). With
+// attachments, content becomes an array of parts: one text part carrying the
+// typed text plus inlined file-text blocks, followed by one image part per
+// image attachment. File text is inlined (not a separate part type) so any
+// model can read it; images become image parts the provider maps to image_url.
+function toModelContent(content: string, attachments?: Attachment[]) {
+  if (!attachments || attachments.length === 0) return content;
+  const files = attachments.filter((a): a is Extract<Attachment, { type: "file" }> => a.type === "file");
+  const images = attachments.filter((a): a is Extract<Attachment, { type: "image" }> => a.type === "image");
+  const fileBlock = files
+    .map((f) => `\n\n[Attached file: ${f.name}]\n${f.text}`)
+    .join("");
+  const parts: Array<{ type: "text"; text: string } | { type: "image"; image: string }> = [
+    { type: "text", text: (content || "") + fileBlock },
+    ...images.map((a) => ({ type: "image" as const, image: a.dataUrl })),
+  ];
+  return parts;
 }
 
 // POST { conversationId, messages, action, ...ids }
@@ -74,7 +94,7 @@ export async function POST(req: Request) {
     if (action === "send") {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       if (lastUser) {
-        addMessage(conversationId, "user", lastUser.content, userMessageId);
+        addMessage(conversationId, "user", lastUser.content, userMessageId, lastUser.attachments);
         if (conv.title === "New conversation") {
           updateConversationTitle(
             conversationId,
@@ -147,7 +167,11 @@ export async function POST(req: Request) {
     const result = streamText({
       model,
       system: systemPromptFor(conv.mode) + contextBlock,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: messages.map((m) =>
+        m.role === "user"
+          ? { role: "user" as const, content: toModelContent(m.content, m.attachments) }
+          : { role: m.role, content: m.content },
+      ),
       abortSignal: req.signal,
       onFinish: ({ text }) => {
         if (assistantMessageId) {
