@@ -7,10 +7,15 @@ import { SCHEMA_SQL, type Conversation, type Message, type ConversationMode } fr
 const globalForDb = globalThis as unknown as { __studygptDb?: Database.Database };
 
 function open(): Database.Database {
-  const dbPath = resolve(process.env.DATABASE_URL || "./data/studygpt.db");
-  mkdirSync(dirname(dbPath), { recursive: true });
+  const configured = process.env.DATABASE_URL || "./data/studygpt.db";
+  const inMemory = configured === ":memory:";
+  // ":memory:" must be passed verbatim — resolve(":memory:") yields an
+  // absolute path ending in ":memory:", which better-sqlite3 would then
+  // create as a literal file on disk.
+  const dbPath = inMemory ? ":memory:" : resolve(configured);
+  if (!inMemory) mkdirSync(dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+  if (!inMemory) db.pragma("journal_mode = WAL"); // WAL requires a file-backed db
   db.pragma("foreign_keys = ON");
   for (const stmt of SCHEMA_SQL) db.exec(stmt);
   return db;

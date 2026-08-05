@@ -93,7 +93,11 @@ export async function POST(req: Request) {
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
       abortSignal: req.signal,
       onFinish: ({ text }) => {
-        if (assistantMessageId) upsertMessage(conversationId, "assistant", text, assistantMessageId);
+        if (assistantMessageId) {
+          // Trim trailing whitespace so a model-emitted trailing newline
+          // doesn't render as a blank line on reload.
+          upsertMessage(conversationId, "assistant", text.replace(/\s+$/, ""), assistantMessageId);
+        }
       },
     });
 

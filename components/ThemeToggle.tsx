@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Theme = "light" | "dark";
 
@@ -11,18 +11,25 @@ type Theme = "light" | "dark";
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>("light");
   const [mounted, setMounted] = useState(false);
+  // Set true on the first explicit toggle so a slow in-flight DB reconcile
+  // (fired at mount) can't revert the user's choice once it resolves.
+  const toggledRef = useRef(false);
 
   useEffect(() => {
     const current = (document.documentElement.dataset.theme as Theme) || "light";
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(current);
     setMounted(true);
-    // Reconcile with the DB (authoritative) in case it changed elsewhere.
+    // Reconcile with the DB (authoritative) in case it changed elsewhere —
+    // but only if the user hasn't toggled since mount, and against the live
+    // data-theme at resolve time rather than the stale mount snapshot.
     fetch("/api/settings")
       .then((r) => r.json())
       .then((c: { raw?: { theme?: string } }) => {
+        if (toggledRef.current) return;
         const db = c.raw?.theme === "dark" ? "dark" : "light";
-        if (db !== current) applyTheme(db);
+        const live = (document.documentElement.dataset.theme as Theme) || "light";
+        if (db !== live) applyTheme(db);
       })
       .catch(() => {});
   }, []);
@@ -38,6 +45,7 @@ export function ThemeToggle() {
   }
 
   function toggle() {
+    toggledRef.current = true;
     const next: Theme = theme === "dark" ? "light" : "dark";
     applyTheme(next);
     fetch("/api/settings", {
