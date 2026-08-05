@@ -25,7 +25,6 @@ export function ThemeToggle() {
         if (db !== current) applyTheme(db);
       })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function applyTheme(t: Theme) {
