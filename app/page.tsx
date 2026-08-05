@@ -7,6 +7,8 @@ import { ChatInput } from "@/components/ChatInput";
 import { ModeToggle } from "@/components/ModeToggle";
 import type { Conversation, ConversationMode, Message } from "@/lib/db/schema";
 
+type ChatAction = "send" | "regenerate" | "edit";
+
 export default function Page() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -16,6 +18,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [assistantStreamId, setAssistantStreamId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const loadConversations = useCallback(async () => {
     const res = await fetch("/api/conversations");
@@ -23,7 +26,6 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    // Initial fetch of conversation list on mount.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadConversations();
   }, [loadConversations]);
@@ -74,55 +76,55 @@ export default function Page() {
     });
     const updated: Conversation = await res.json();
     setConversation(updated);
-    setConversations((prev) =>
-      prev.map((c) => (c.id === updated.id ? updated : c)),
-    );
+    setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
   }
 
-  async function sendMessage(text: string) {
+  // Core streaming runner. `baseDisplay` is the message list to show *before*
+  // the new assistant bubble (already includes any new/edited user message).
+  // runChat appends the (empty) assistant bubble, streams into it, and
+  // persists per `action`.
+  async function runChat(args: {
+    action: ChatAction;
+    history: Message[];
+    assistantId: string;
+    baseDisplay: Message[];
+    userMessageId?: string;
+    replaceAssistantId?: string;
+    editMessageId?: string;
+    editContent?: string;
+  }) {
+    const conv = conversation;
+    if (!conv) return;
     setError(null);
-    if (!conversation) return;
-
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      conversation_id: conversation.id,
-      role: "user",
-      content: text,
-      created_at: Date.now(),
-    };
-    const assistantId = crypto.randomUUID();
     const assistantMsg: Message = {
-      id: assistantId,
-      conversation_id: conversation.id,
+      id: args.assistantId,
+      conversation_id: conv.id,
       role: "assistant",
       content: "",
       created_at: Date.now(),
     };
-
-    // Optimistic: show the user message + an empty assistant bubble immediately.
-    const outgoing = [...messages, userMsg];
-    setMessages([...outgoing, assistantMsg]);
-    setAssistantStreamId(assistantId);
+    setMessages([...args.baseDisplay, assistantMsg]);
+    setAssistantStreamId(args.assistantId);
     setStreaming(true);
 
-    // Optimistically title the conversation on the first turn (server does too).
-    if (conversation.title === "New conversation") {
-      const newTitle = text.slice(0, 50).trim() || "New conversation";
-      const titled = { ...conversation, title: newTitle };
-      setConversation(titled);
-      setConversations((prev) =>
-        prev.map((c) => (c.id === titled.id ? titled : c)),
-      );
-    }
-
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let acc = "";
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          conversationId: conversation.id,
-          messages: outgoing.map((m) => ({ role: m.role, content: m.content })),
+          conversationId: conv.id,
+          messages: args.history.map((m) => ({ role: m.role, content: m.content })),
+          action: args.action,
+          userMessageId: args.userMessageId,
+          assistantMessageId: args.assistantId,
+          replaceAssistantId: args.replaceAssistantId,
+          editMessageId: args.editMessageId,
+          editContent: args.editContent,
         }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -133,25 +135,127 @@ export default function Page() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let acc = "";
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         acc += decoder.decode(value, { stream: true });
         setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: acc } : m)),
+          prev.map((m) => (m.id === args.assistantId ? { ...m, content: acc } : m)),
         );
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Something went wrong";
-      setError(msg);
-      // Drop the empty assistant bubble if nothing was streamed.
-      setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+      if (controller.signal.aborted) {
+        // Stopped — keep the partial in the bubble and persist it (idempotent:
+        // if onFinish already wrote the full reply, this is a no-op).
+        if (acc) {
+          fetch("/api/messages", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              conversationId: conv.id,
+              messageId: args.assistantId,
+              role: "assistant",
+              content: acc,
+            }),
+          }).catch(() => {});
+        }
+      } else {
+        const msg = err instanceof Error ? err.message : "Something went wrong";
+        setError(msg);
+        setMessages((prev) => prev.filter((m) => m.id !== args.assistantId));
+      }
     } finally {
       setStreaming(false);
       setAssistantStreamId(null);
+      abortRef.current = null;
     }
   }
+
+  async function sendMessage(text: string) {
+    if (!conversation || streaming) return;
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      conversation_id: conversation.id,
+      role: "user",
+      content: text,
+      created_at: Date.now(),
+    };
+    const outgoing = [...messages, userMsg];
+    setMessages(outgoing);
+
+    // Optimistically title the conversation on the first turn (server does too).
+    if (conversation.title === "New conversation") {
+      const newTitle = text.slice(0, 50).trim() || "New conversation";
+      const titled = { ...conversation, title: newTitle };
+      setConversation(titled);
+      setConversations((prev) => prev.map((c) => (c.id === titled.id ? titled : c)));
+    }
+
+    await runChat({
+      action: "send",
+      history: outgoing,
+      baseDisplay: outgoing,
+      assistantId: crypto.randomUUID(),
+      userMessageId: userMsg.id,
+    });
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+  }
+
+  async function retry() {
+    if (!conversation || streaming) return;
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    // Re-send the same user turn; user message is already persisted (idempotent).
+    await runChat({
+      action: "send",
+      history: messages,
+      baseDisplay: messages,
+      assistantId: crypto.randomUUID(),
+      userMessageId: lastUser.id,
+    });
+  }
+
+  async function regenerate() {
+    if (!conversation || streaming) return;
+    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+    if (!lastAssistant) return;
+    const history = messages.filter((m) => m.id !== lastAssistant.id);
+    const baseDisplay = history; // drop old assistant, new one appended by runChat
+    await runChat({
+      action: "regenerate",
+      history,
+      baseDisplay,
+      assistantId: crypto.randomUUID(),
+      replaceAssistantId: lastAssistant.id,
+    });
+  }
+
+  async function editMessage(messageId: string, newContent: string) {
+    if (!conversation || streaming) return;
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx === -1) return;
+    const edited: Message = { ...messages[idx], content: newContent };
+    const history = [...messages.slice(0, idx), edited]; // drop everything after
+    await runChat({
+      action: "edit",
+      history,
+      baseDisplay: history,
+      assistantId: crypto.randomUUID(),
+      editMessageId: messageId,
+      editContent: newContent,
+    });
+  }
+
+  // Index of the last assistant message — for the regenerate affordance.
+  const lastAssistantId = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return messages[i].id;
+    }
+    return null;
+  })();
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
@@ -164,12 +268,17 @@ export default function Page() {
       />
 
       <main className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-line px-5 py-2.5">
+        <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-2.5">
           <span className="truncate pr-3 text-[15px] italic text-ink-2">
             {conversation?.title ?? "Select or start a conversation"}
           </span>
           {conversation && (
-            <ModeToggle mode={conversation.mode} onChange={changeMode} />
+            <div className="flex shrink-0 items-center gap-3">
+              <span className="mono hidden rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[10px] tracking-wide text-ink-3 sm:inline">
+                {conversation.model}
+              </span>
+              <ModeToggle mode={conversation.mode} onChange={changeMode} />
+            </div>
           )}
         </header>
 
@@ -177,16 +286,14 @@ export default function Page() {
           <div className="mx-auto flex max-w-3xl flex-col gap-5">
             {!conversation && (
               <div className="mx-auto mt-24 max-w-md text-center">
-                <p className="mono mb-3 text-[11px] tracking-[0.2em] text-rule">
-                  NOTEBOOK
-                </p>
+                <p className="mono mb-3 text-[11px] tracking-[0.2em] text-rule">NOTEBOOK</p>
                 <h1 className="text-[1.6rem] leading-tight text-ink">
                   Start a conversation to study a concept.
                 </h1>
                 <p className="mt-3 text-[15px] text-ink-2">
                   Ask about the derivative, eigenvalues, or entropy — then flip on{" "}
-                  <span className="text-feynman">Feynman</span> to learn by
-                  explaining it back.
+                  <span className="text-feynman">Feynman</span> to learn by explaining it
+                  back.
                 </p>
               </div>
             )}
@@ -196,6 +303,9 @@ export default function Page() {
                 role={m.role}
                 content={m.content}
                 streaming={streaming && m.id === assistantStreamId}
+                canRegenerate={m.id === lastAssistantId}
+                onRegenerate={regenerate}
+                onEdit={(content) => editMessage(m.id, content)}
               />
             ))}
           </div>
@@ -203,14 +313,19 @@ export default function Page() {
 
         {error && (
           <div className="mx-auto w-full max-w-3xl px-4">
-            <p className="mono rounded-[3px] border border-rule/40 bg-rule/5 px-3 py-2 text-[12px] text-rule">
-              {error}
-            </p>
+            <div className="mono flex items-center gap-3 rounded-[3px] border border-rule/40 bg-rule/5 px-3 py-2 text-[12px] text-rule">
+              <span className="flex-1">{error}</span>
+              <button onClick={retry} className="underline hover:opacity-80">
+                retry
+              </button>
+            </div>
           </div>
         )}
 
         <ChatInput
           onSend={sendMessage}
+          onStop={stop}
+          streaming={streaming}
           disabled={streaming || !conversation}
           placeholder={
             conversation
