@@ -84,9 +84,9 @@ body {
    sections rather than a cramped wall of text. Graph Paper Lab tokens only. */
 .prose-chat {
   font-size: 1rem;
-  line-height: 1.72;
+  line-height: 1.8;
 }
-.prose-chat > * + * { margin-top: 0.85em; }
+.prose-chat > * + * { margin-top: 1em; }
 .prose-chat p { margin: 0; }
 .prose-chat p:first-child { margin-top: 0; }
 .prose-chat p:last-child { margin-bottom: 0; }
@@ -176,8 +176,8 @@ html[data-theme="dark"] .msg-bubble { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
    cramped wall. Allow horizontal scroll for long equations instead of
    shrinking them. */
 .prose-chat .katex-display {
-  margin: 1.15em 0;
-  padding: 0.1em 0;
+  margin: 1.4em 0;
+  padding: 0.15em 0;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -187,7 +187,7 @@ html[data-theme="dark"] .msg-bubble { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
 }
 /* Tighten the gap when a display equation directly follows another (a chain
    of steps) so they group as a sequence rather than drifting apart. */
-.prose-chat .katex-display + .katex-display { margin-top: 0.7em; }
+.prose-chat .katex-display + .katex-display { margin-top: 0.9em; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
