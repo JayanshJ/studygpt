@@ -1,0 +1,83 @@
+"use client";
+
+import Link from "next/link";
+import type { Conversation } from "@/lib/db/schema";
+
+interface Props {
+  conversations: Conversation[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  onDelete: (id: string) => void;
+}
+
+export function Sidebar({ conversations, activeId, onSelect, onNew, onDelete }: Props) {
+  return (
+    <aside className="margin-rule flex h-full w-64 shrink-0 flex-col bg-paper-3">
+      <header className="flex items-center justify-between px-4 py-3.5">
+        <span className="mono flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
+          <span className="h-1.5 w-1.5 rounded-full bg-rule" />
+          StudyGPT
+        </span>
+        <Link
+          href="/settings"
+          aria-label="Settings"
+          className="mono text-ink-3 transition-colors hover:text-ink"
+        >
+          ⚙
+        </Link>
+      </header>
+
+      <div className="px-3 pb-2">
+        <button
+          onClick={onNew}
+          className="mono w-full rounded-[3px] border border-line bg-paper-2 px-3 py-2 text-[12px] tracking-wide text-ink transition-colors hover:border-ink/40"
+        >
+          + new conversation
+        </button>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
+        {conversations.length === 0 && (
+          <p className="mono px-2 py-4 text-[11px] text-ink-3">
+            no conversations yet
+          </p>
+        )}
+        {conversations.map((c) => {
+          const active = c.id === activeId;
+          return (
+            <div
+              key={c.id}
+              onClick={() => onSelect(c.id)}
+              className={`group relative cursor-pointer rounded-[3px] px-3 py-2 text-[14px] transition-colors ${
+                active ? "bg-paper-2" : "hover:bg-paper-2/60"
+              }`}
+            >
+              {active && (
+                <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-rule" />
+              )}
+              <div className="flex items-center gap-1.5">
+                <span className="flex-1 truncate leading-snug text-ink">{c.title}</span>
+                {c.mode === "feynman" && (
+                  <span className="mono rounded-[2px] bg-feynman/10 px-1 py-px text-[9px] font-medium text-feynman">
+                    F
+                  </span>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(c.id);
+                  }}
+                  aria-label="Delete conversation"
+                  className="mono opacity-0 transition-opacity group-hover:opacity-100 hover:text-rule"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+}
