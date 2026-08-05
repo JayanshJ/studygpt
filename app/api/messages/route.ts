@@ -19,8 +19,15 @@ export async function PATCH(req: Request) {
     return new Response("Invalid JSON", { status: 400 });
   }
   const { conversationId, messageId, role, content } = body;
-  if (!conversationId || !messageId || !role || content === undefined) {
-    return new Response("Missing conversationId, messageId, role, or content", { status: 400 });
+  const validRoles = ["user", "assistant", "system"];
+  if (
+    !conversationId ||
+    !messageId ||
+    !role ||
+    !validRoles.includes(role as string) ||
+    content === undefined
+  ) {
+    return new Response("Missing or invalid conversationId, messageId, role, or content", { status: 400 });
   }
   addMessage(conversationId, role, content, messageId);
   return new Response("OK", { status: 200 });

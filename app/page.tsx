@@ -21,6 +21,7 @@ export default function Page() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const lastRunRef = useRef<Parameters<typeof runChat>[0] | null>(null);
 
   const loadConversations = useCallback(async () => {
     const res = await fetch("/api/conversations");
@@ -37,6 +38,7 @@ export default function Page() {
   }, [messages, assistantStreamId]);
 
   async function selectConversation(id: string) {
+    if (streaming) abortRef.current?.abort();
     setActiveId(id);
     setError(null);
     setSidebarOpen(false);
@@ -98,6 +100,7 @@ export default function Page() {
   }) {
     const conv = conversation;
     if (!conv) return;
+    lastRunRef.current = args;
     setError(null);
     const assistantMsg: Message = {
       id: args.assistantId,
@@ -148,9 +151,9 @@ export default function Page() {
       }
     } catch (err) {
       if (controller.signal.aborted) {
-        // Stopped — keep the partial in the bubble and persist it (idempotent:
-        // if onFinish already wrote the full reply, this is a no-op).
         if (acc) {
+          // Stopped mid-stream — keep the partial and persist it (idempotent:
+          // if onFinish already wrote the full reply, this is a no-op).
           fetch("/api/messages", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -161,6 +164,9 @@ export default function Page() {
               content: acc,
             }),
           }).catch(() => {});
+        } else {
+          // Stopped before any token — drop the empty bubble.
+          setMessages((prev) => prev.filter((m) => m.id !== args.assistantId));
         }
       } else {
         const msg = err instanceof Error ? err.message : "Something went wrong";
@@ -209,16 +215,9 @@ export default function Page() {
 
   async function retry() {
     if (!conversation || streaming) return;
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (!lastUser) return;
-    // Re-send the same user turn; user message is already persisted (idempotent).
-    await runChat({
-      action: "send",
-      history: messages,
-      baseDisplay: messages,
-      assistantId: crypto.randomUUID(),
-      userMessageId: lastUser.id,
-    });
+    const last = lastRunRef.current;
+    if (!last) return;
+    await runChat(last);
   }
 
   async function regenerate() {
