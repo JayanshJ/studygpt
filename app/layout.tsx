@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Newsreader, JetBrains_Mono } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
@@ -32,15 +33,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${newsreader.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('studygpt-theme');if(t!=='dark')t='light';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='light';}})();`,
-          }}
-        />
-      </head>
       <body className="min-h-full flex flex-col bg-paper text-ink">
         {children}
+        {/* No-flash theme script: runs before hydration (beforeInteractive is
+            always injected into <head> and executed before first paint) so the
+            stored theme is applied with no flash. Using next/script (not a raw
+            <script>) avoids the React 19 "scripts in components aren't
+            executed on the client" warning. */}
+        <Script id="theme-init" strategy="beforeInteractive">
+          {`(function(){try{var t=localStorage.getItem('studygpt-theme');if(t!=='dark')t='light';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='light';}})();`}
+        </Script>
       </body>
     </html>
   );
