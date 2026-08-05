@@ -47,4 +47,36 @@ export const ollamaProvider: Provider = {
       );
     }
   },
+
+  // Embedding model via the same OpenAI-compatible client. Used by the
+  // embed/ingest/retrieval helpers (Phase 2 RAG).
+  embeddingModel({ model, baseURL, apiKey }) {
+    const client = createOpenAICompatible({
+      name: "ollama",
+      baseURL: baseURL || "http://localhost:11434/v1",
+      ...(apiKey ? { apiKey, headers: { Authorization: `Bearer ${apiKey}` } } : {}),
+    });
+    return client.textEmbeddingModel(model);
+  },
+
+  // Reuse the /v1/models availability check for the embedding model.
+  async validateEmbedding({ model, baseURL, apiKey }) {
+    let res: Response;
+    try {
+      res = await fetch(`${baseURL}/models`, {
+        signal: AbortSignal.timeout(3000),
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      });
+    } catch {
+      throw new Error(`Could not reach the model server at ${baseURL}. Is Ollama running?`);
+    }
+    if (!res.ok) throw new Error(`Server returned ${res.status} from ${baseURL}/models`);
+    const data = (await res.json()) as { data?: { id: string }[] };
+    const ids = (data.data ?? []).map((m) => m.id);
+    if (!ids.includes(model)) {
+      throw new Error(
+        `Embedding model "${model}" is not available. Pull it with \`ollama pull ${model}\`. Available: ${ids.join(", ") || "(none)"}.`,
+      );
+    }
+  },
 };

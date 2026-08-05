@@ -1,4 +1,4 @@
-import type { LanguageModel } from "ai";
+import type { LanguageModel, EmbeddingModel } from "ai";
 import { ollamaProvider } from "./ollama";
 import { getAllSettings, getSetting } from "@/lib/db";
 
@@ -14,6 +14,8 @@ export interface Provider {
   // available. Throw with a human-readable message on failure so the route
   // can return a clean 502 instead of an empty streamed bubble.
   validate?(config: { model: string; baseURL: string; apiKey?: string }): Promise<void>;
+  embeddingModel?(config: { model: string; baseURL?: string; apiKey?: string }): EmbeddingModel;
+  validateEmbedding?(config: { model: string; baseURL: string; apiKey?: string }): Promise<void>;
 }
 
 const PROVIDERS: Record<string, Provider> = {
@@ -33,6 +35,7 @@ export function getProvider(name?: string): Provider {
 export function getModelConfig(): {
   provider: string;
   model: string;
+  embeddingModel: string;
   baseURL: string;
   apiKey: string;
 } {
@@ -40,6 +43,7 @@ export function getModelConfig(): {
   return {
     provider: all.provider || "ollama",
     model: all.model || process.env.OLLAMA_MODEL || "glm-5.2:cloud",
+    embeddingModel: all.embeddingModel || process.env.OLLAMA_EMBEDDING_MODEL || "nomic-embed-text",
     baseURL: all.baseUrl || process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1",
     apiKey: all.apiKey || "",
   };
