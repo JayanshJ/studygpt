@@ -75,18 +75,67 @@ export function addMessage(
   conversationId: string,
   role: Message["role"],
   content: string,
+  id?: string,
 ): Message {
   const row: Message = {
-    id: crypto.randomUUID(),
+    id: id ?? crypto.randomUUID(),
+    conversation_id: conversationId,
+    role,
+    content,
+    created_at: Date.now(),
+  };
+  // INSERT OR IGNORE: a retry/regenerate passing the same ID is a no-op,
+  // so we never duplicate a user turn. (For the assistant reply, onFinish
+  // uses upsertMessage instead so a completing full reply overwrites a
+  // partial — see upsertMessage.)
+  db.prepare(
+    "INSERT OR IGNORE INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+  ).run(row.id, row.conversation_id, row.role, row.content, row.created_at);
+  return row;
+}
+
+// Insert or overwrite content by id. Used by onFinish for the assistant
+// reply: if a stop-persist already wrote a partial, the completing full
+// reply overwrites it. Leaves created_at untouched on conflict.
+export function upsertMessage(
+  conversationId: string,
+  role: Message["role"],
+  content: string,
+  id: string,
+): Message {
+  const row: Message = {
+    id,
     conversation_id: conversationId,
     role,
     content,
     created_at: Date.now(),
   };
   db.prepare(
-    "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+    `INSERT INTO messages (id, conversation_id, role, content, created_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET content = excluded.content`,
   ).run(row.id, row.conversation_id, row.role, row.content, row.created_at);
   return row;
+}
+
+export function updateMessageContent(id: string, content: string): void {
+  db.prepare("UPDATE messages SET content = ? WHERE id = ?").run(content, id);
+}
+
+export function deleteMessage(id: string): void {
+  db.prepare("DELETE FROM messages WHERE id = ?").run(id);
+}
+
+// Delete every message in the conversation strictly after `messageId`
+// (by created_at). Used by edit-and-resend to drop the stale tail.
+export function deleteMessagesAfter(conversationId: string, messageId: string): void {
+  const anchor = db.prepare("SELECT created_at FROM messages WHERE id = ?").get(messageId) as
+    | { created_at: number }
+    | undefined;
+  if (!anchor) return;
+  db.prepare(
+    "DELETE FROM messages WHERE conversation_id = ? AND created_at > ?",
+  ).run(conversationId, anchor.created_at);
 }
 
 // --- Settings (key-value) ---

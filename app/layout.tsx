@@ -27,6 +27,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${newsreader.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('studygpt-theme');if(t!=='dark')t='light';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='light';}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-paper text-ink">
         {children}
       </body>
