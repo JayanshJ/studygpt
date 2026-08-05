@@ -17,6 +17,8 @@ export default function Page() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assistantStreamId, setAssistantStreamId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -37,6 +39,7 @@ export default function Page() {
   async function selectConversation(id: string) {
     setActiveId(id);
     setError(null);
+    setSidebarOpen(false);
     const res = await fetch(`/api/conversations/${id}`);
     const data = await res.json();
     setConversation(data.conversation);
@@ -259,19 +262,54 @@ export default function Page() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
-      <Sidebar
-        conversations={conversations}
-        activeId={activeId}
-        onSelect={selectConversation}
-        onNew={newConversation}
-        onDelete={deleteConversation}
-      />
+      {/* Desktop sidebar */}
+      <div className="hidden md:flex">
+        <Sidebar
+          conversations={conversations}
+          activeId={activeId}
+          onSelect={selectConversation}
+          onNew={newConversation}
+          onDelete={deleteConversation}
+          query={query}
+          onQueryChange={setQuery}
+        />
+      </div>
+
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-30 bg-ink/20 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="fixed left-0 top-0 z-40 h-full md:hidden">
+            <Sidebar
+              conversations={conversations}
+              activeId={activeId}
+              onSelect={selectConversation}
+              onNew={newConversation}
+              onDelete={deleteConversation}
+              query={query}
+              onQueryChange={setQuery}
+            />
+          </div>
+        </>
+      )}
 
       <main className="flex flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-2.5">
-          <span className="truncate pr-3 text-[15px] italic text-ink-2">
-            {conversation?.title ?? "Select or start a conversation"}
-          </span>
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open sidebar"
+              className="mono text-ink-3 transition-colors hover:text-ink md:hidden"
+            >
+              ☰
+            </button>
+            <span className="truncate text-[15px] italic text-ink-2">
+              {conversation?.title ?? "Select or start a conversation"}
+            </span>
+          </div>
           {conversation && (
             <div className="flex shrink-0 items-center gap-3">
               <span className="mono hidden rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[10px] tracking-wide text-ink-3 sm:inline">

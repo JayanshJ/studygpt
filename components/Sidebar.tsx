@@ -9,9 +9,22 @@ interface Props {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  query: string;
+  onQueryChange: (q: string) => void;
 }
 
-export function Sidebar({ conversations, activeId, onSelect, onNew, onDelete }: Props) {
+export function Sidebar({
+  conversations,
+  activeId,
+  onSelect,
+  onNew,
+  onDelete,
+  query,
+  onQueryChange,
+}: Props) {
+  const q = query.trim().toLowerCase();
+  const filtered = q ? conversations.filter((c) => c.title.toLowerCase().includes(q)) : conversations;
+
   return (
     <aside className="margin-rule flex h-full w-64 shrink-0 flex-col bg-paper-3">
       <header className="flex items-center justify-between px-4 py-3.5">
@@ -37,13 +50,22 @@ export function Sidebar({ conversations, activeId, onSelect, onNew, onDelete }: 
         </button>
       </div>
 
+      <div className="px-3 pb-1">
+        <input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="search"
+          className="mono w-full rounded-[3px] border border-line bg-paper-2 px-2.5 py-1.5 text-[12px] text-ink outline-none transition-colors placeholder:text-ink-3 focus:border-ink/40"
+        />
+      </div>
+
       <nav className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
-        {conversations.length === 0 && (
+        {filtered.length === 0 && (
           <p className="mono px-2 py-4 text-[11px] text-ink-3">
-            no conversations yet
+            {conversations.length === 0 ? "no conversations yet" : "no matches"}
           </p>
         )}
-        {conversations.map((c) => {
+        {filtered.map((c) => {
           const active = c.id === activeId;
           return (
             <div
