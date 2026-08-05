@@ -98,7 +98,7 @@ export function chunkText(text: string): string[] {
     if (cur && (cur + "\n\n" + piece).length > TARGET) {
       chunks.push(cur);
       const tail = cur.slice(-OVERLAP);
-      cur = tail ? tail + piece : piece;
+      cur = tail ? tail + "\n\n" + piece : piece;
     } else {
       cur = cur ? cur + "\n\n" + piece : piece;
     }
