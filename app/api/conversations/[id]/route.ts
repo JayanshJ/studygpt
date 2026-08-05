@@ -5,6 +5,7 @@ import {
   getMessageSources,
   listMessages,
   updateConversationMode,
+  updateConversationModel,
   updateConversationTitle,
 } from "@/lib/db";
 import type { ConversationMode } from "@/lib/db/schema";
@@ -27,7 +28,7 @@ export async function GET(
   return NextResponse.json({ conversation: conv, messages });
 }
 
-// PATCH /api/conversations/[id] — update mode and/or title.
+// PATCH /api/conversations/[id] — update mode, title, and/or model.
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -39,6 +40,9 @@ export async function PATCH(
   }
   if (typeof body.title === "string") {
     updateConversationTitle(id, body.title);
+  }
+  if (typeof body.model === "string" && body.model.trim()) {
+    updateConversationModel(id, body.model.trim());
   }
   return NextResponse.json(getConversation(id));
 }

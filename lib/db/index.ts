@@ -23,6 +23,12 @@ function open(): Database.Database {
   if (!cols.some((c) => c.name === "project_id")) {
     db.exec("ALTER TABLE conversations ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL");
   }
+  // Additive migration: add messages.attachments if missing (existing DBs).
+  // Stores a JSON array of Attachment (image data URLs / inlined file text).
+  const msgCols = db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
+  if (!msgCols.some((c) => c.name === "attachments")) {
+    db.exec("ALTER TABLE messages ADD COLUMN attachments TEXT");
+  }
   return db;
 }
 
@@ -64,6 +70,10 @@ export function updateConversationMode(id: string, mode: ConversationMode): void
   db.prepare("UPDATE conversations SET mode = ? WHERE id = ?").run(mode, id);
 }
 
+export function updateConversationModel(id: string, model: string): void {
+  db.prepare("UPDATE conversations SET model = ? WHERE id = ?").run(model, id);
+}
+
 export function updateConversationTitle(id: string, title: string): void {
   db.prepare("UPDATE conversations SET title = ? WHERE id = ?").run(title, id);
 }
@@ -81,11 +91,23 @@ export function deleteConversation(id: string): void {
 // --- Messages ---
 
 export function listMessages(conversationId: string): Message[] {
-  return db
+  const rows = db
     .prepare(
       "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
     )
-    .all(conversationId) as Message[];
+    .all(conversationId) as (Omit<Message, "attachments"> & { attachments: string | null })[];
+  return rows.map((r) => {
+    let attachments: Message["attachments"] = null;
+    if (r.attachments) {
+      try {
+        const parsed = JSON.parse(r.attachments);
+        if (Array.isArray(parsed)) attachments = parsed as Message["attachments"];
+      } catch {
+        attachments = null;
+      }
+    }
+    return { ...r, attachments };
+  });
 }
 
 export function addMessage(
@@ -93,12 +115,14 @@ export function addMessage(
   role: Message["role"],
   content: string,
   id?: string,
+  attachments?: Message["attachments"],
 ): Message {
   const row: Message = {
     id: id ?? crypto.randomUUID(),
     conversation_id: conversationId,
     role,
     content,
+    attachments: attachments ?? null,
     created_at: Date.now(),
   };
   // INSERT OR IGNORE: a retry/regenerate passing the same ID is a no-op,
@@ -106,8 +130,8 @@ export function addMessage(
   // uses upsertMessage instead so a completing full reply overwrites a
   // partial — see upsertMessage.)
   db.prepare(
-    "INSERT OR IGNORE INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-  ).run(row.id, row.conversation_id, row.role, row.content, row.created_at);
+    "INSERT OR IGNORE INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(row.id, row.conversation_id, row.role, row.content, JSON.stringify(row.attachments), row.created_at);
   return row;
 }
 
@@ -125,13 +149,14 @@ export function upsertMessage(
     conversation_id: conversationId,
     role,
     content,
+    attachments: null,
     created_at: Date.now(),
   };
   db.prepare(
-    `INSERT INTO messages (id, conversation_id, role, content, created_at)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO messages (id, conversation_id, role, content, attachments, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET content = excluded.content`,
-  ).run(row.id, row.conversation_id, row.role, row.content, row.created_at);
+  ).run(row.id, row.conversation_id, row.role, row.content, JSON.stringify(row.attachments), row.created_at);
   return row;
 }
 
@@ -189,4 +214,4 @@ export function getAllSettings(): Record<string, string> {
 export * from "./projects";
 export * from "./materials";
 export * from "./sources";
-export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType } from "./schema";
+export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment } from "./schema";

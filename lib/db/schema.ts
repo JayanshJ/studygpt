@@ -80,6 +80,7 @@ export interface Message {
   conversation_id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  attachments: Attachment[] | null;
   created_at: number;
 }
 
@@ -120,3 +121,10 @@ export interface SourceEntry {
   snippet: string;
   ordinal: number;
 }
+
+// A single attachment on a user message. Stored as JSON in messages.attachments.
+// Images are kept as data URLs (sent to the model as image parts); text files
+// have their extracted text inlined into the prompt at send time.
+export type Attachment =
+  | { type: "image"; name: string; mime: string; dataUrl: string }
+  | { type: "file"; name: string; text: string; charCount: number };

@@ -150,6 +150,7 @@ export default function Page() {
       conversation_id: conv.id,
       role: "assistant",
       content: "",
+      attachments: null,
       created_at: Date.now(),
     };
     setMessages([...args.baseDisplay, assistantMsg]);
@@ -245,6 +246,7 @@ export default function Page() {
       conversation_id: conversation.id,
       role: "user",
       content: text,
+      attachments: null,
       created_at: Date.now(),
     };
     const outgoing = [...messages, userMsg];
