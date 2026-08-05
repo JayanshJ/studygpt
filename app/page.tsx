@@ -278,7 +278,7 @@ export default function Page() {
       {sidebarOpen && (
         <>
           <div
-            className="fixed inset-0 z-30 bg-ink/20 md:hidden"
+            className="fixed inset-0 z-30 bg-black/40 md:hidden"
             onClick={() => setSidebarOpen(false)}
           />
           <div className="fixed left-0 top-0 z-40 h-full md:hidden">

@@ -19,6 +19,19 @@
   --grid: rgba(31, 32, 32, 0.045); /* faint graph-paper grid */
 }
 
+html[data-theme="dark"] {
+  --paper: #1a1b1b;
+  --paper-2: #252626;
+  --paper-3: #131414;
+  --ink: #ecead8;
+  --ink-2: #a8a99e;
+  --ink-3: #76766c;
+  --rule: #d9685a;
+  --feynman: #7aa8d8;
+  --line: #3a3b39;
+  --grid: rgba(236, 234, 216, 0.05);
+}
+
 @theme inline {
   --color-paper: var(--paper);
   --color-paper-2: var(--paper-2);
@@ -90,6 +103,7 @@ body {
   padding: 0.1em 0.32em;
   border-radius: 3px;
 }
+html[data-theme="dark"] .prose-chat code { background: rgba(236, 234, 216, 0.10); }
 .prose-chat pre {
   background: var(--paper-3);
   border: 1px solid var(--line);
@@ -128,6 +142,8 @@ body {
 ::-webkit-scrollbar-thumb { background: #c9c6b6; border-radius: 6px; }
 ::-webkit-scrollbar-thumb:hover { background: #b4b1a1; }
 ::-webkit-scrollbar-track { background: transparent; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #3a3b39; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4a4b49; }
 
 /* Focus rings — ink, not browser blue */
 :where(button, a, input, textarea, select):focus-visible {
