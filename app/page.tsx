@@ -29,7 +29,6 @@ export default function Page() {
   const [query, setQuery] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- setActiveProjectId is wired up by Task 8 (sidebar ProjectSwitcher)
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectMaterialCount, setActiveProjectMaterialCount] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -327,6 +326,9 @@ export default function Page() {
           onDelete={deleteConversation}
           query={query}
           onQueryChange={setQuery}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          onProjectChange={setActiveProjectId}
         />
       </div>
 
@@ -346,6 +348,9 @@ export default function Page() {
               onDelete={deleteConversation}
               query={query}
               onQueryChange={setQuery}
+              projects={projects}
+              activeProjectId={activeProjectId}
+              onProjectChange={setActiveProjectId}
             />
           </div>
         </>

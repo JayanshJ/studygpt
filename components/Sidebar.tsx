@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import type { Conversation } from "@/lib/db/schema";
+import type { Conversation, Project } from "@/lib/db/schema";
 import { ThemeToggle } from "./ThemeToggle";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
 interface Props {
   conversations: Conversation[];
@@ -12,6 +13,9 @@ interface Props {
   onDelete: (id: string) => void;
   query: string;
   onQueryChange: (q: string) => void;
+  projects: Project[];
+  activeProjectId: string | null;
+  onProjectChange: (id: string | null) => void;
 }
 
 export function Sidebar({
@@ -22,9 +26,15 @@ export function Sidebar({
   onDelete,
   query,
   onQueryChange,
+  projects,
+  activeProjectId,
+  onProjectChange,
 }: Props) {
+  const scoped = activeProjectId
+    ? conversations.filter((c) => c.project_id === activeProjectId)
+    : conversations.filter((c) => !c.project_id);
   const q = query.trim().toLowerCase();
-  const filtered = q ? conversations.filter((c) => c.title.toLowerCase().includes(q)) : conversations;
+  const filtered = q ? scoped.filter((c) => c.title.toLowerCase().includes(q)) : scoped;
 
   return (
     <aside className="margin-rule flex h-full w-64 shrink-0 flex-col bg-paper-3">
@@ -44,6 +54,12 @@ export function Sidebar({
           </Link>
         </div>
       </header>
+
+      <ProjectSwitcher
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onChange={onProjectChange}
+      />
 
       <div className="px-3 pb-2">
         <button
@@ -66,7 +82,11 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
         {filtered.length === 0 && (
           <p className="mono px-2 py-4 text-[11px] text-ink-3">
-            {conversations.length === 0 ? "no conversations yet" : "no matches"}
+            {scoped.length === 0
+              ? activeProjectId
+                ? "no conversations in this project"
+                : "no conversations yet"
+              : "no matches"}
           </p>
         )}
         {filtered.map((c) => {
