@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, type FormEvent, type KeyboardEvent, type ClipboardEvent } from "react";
 import type { Attachment } from "@/lib/db/schema";
-import { isVisionModel } from "@/lib/llm/vision";
 
 interface Props {
   onSend: (text: string, attachments: Attachment[]) => void;
@@ -10,17 +9,17 @@ interface Props {
   placeholder?: string;
   streaming?: boolean;
   onStop?: () => void;
-  model?: string;
   projectId?: string | null;
 }
 
 const TEXT_ACCEPT =
   ".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.c,.cc,.cpp,.h,.hpp,.cs,.php,.swift,.sh,.bash,.sql,.html,.htm,.css,.scss,.toml,.ini,.env,.log,.xml";
 
-export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, model, projectId }: Props) {
+export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, projectId }: Props) {
   const [value, setValue] = useState("");
   const [pending, setPending] = useState<Array<{ id: string; attachment: Attachment; file?: File }>>([]);
   const [extracting, setExtracting] = useState(false);
+  const [parsingImage, setParsingImage] = useState<Set<string>>(new Set());
   const [addedToProject, setAddedToProject] = useState<Set<string>>(new Set());
   const [addingToProject, setAddingToProject] = useState<string | null>(null);
   const [gateMsg, setGateMsg] = useState<string | null>(null);
@@ -29,7 +28,6 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const baseRef = useRef("");
-  const visionEnabled = isVisionModel(model);
   // Start false so the server and the client's first render agree (no mic
   // button), then detect Web Speech support after mount. Computing this during
   // render would be false on the server and true on the client → hydration
@@ -51,21 +49,49 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   }, [value]);
 
+  // Add an image attachment. All models accept images: vision-capable models
+  // get the raw image part server-side; text-only models get the OCR'd text
+  // inlined instead. We OCR here at attach time so the parsed text travels with
+  // the persisted attachment and is reused on every turn (and survives a later
+  // model switch) rather than re-parsing each turn.
   function addImageFile(file: File) {
-    if (!visionEnabled) {
-      setGateMsg(`"${model}" doesn't support images — switch to a vision model to attach one.`);
-      return;
-    }
+    const id = crypto.randomUUID();
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = typeof reader.result === "string" ? reader.result : "";
       if (!dataUrl) return;
       setPending((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), attachment: { type: "image", name: file.name, mime: file.type, dataUrl } },
+        { id, attachment: { type: "image", name: file.name, mime: file.type, dataUrl }, file },
       ]);
+      void parseImage(id, file);
     };
     reader.readAsDataURL(file);
+  }
+
+  async function parseImage(id: string, file: File) {
+    setParsingImage((prev) => new Set(prev).add(id));
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/parse-image", { method: "POST", body: form });
+      const data = (await res.json().catch(() => ({}))) as { text?: string; charCount?: number };
+      const text = typeof data.text === "string" ? data.text : "";
+      const charCount = typeof data.charCount === "number" ? data.charCount : text.length;
+      setPending((prev) =>
+        prev.map((p) =>
+          p.id === id && p.attachment.type === "image"
+            ? { ...p, attachment: { ...p.attachment, text, charCount } }
+            : p,
+        ),
+      );
+    } finally {
+      setParsingImage((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   async function addTextFile(file: File) {
@@ -103,21 +129,15 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
   function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
     const items = e.clipboardData?.items;
     if (!items) return;
-    let blockedImage = false;
     for (const it of Array.from(items)) {
       if (it.kind === "file" && it.type.startsWith("image/")) {
         const f = it.getAsFile();
         if (f) {
-          if (visionEnabled) {
-            e.preventDefault();
-            addImageFile(f);
-          } else {
-            blockedImage = true;
-          }
+          e.preventDefault();
+          addImageFile(f);
         }
       }
     }
-    if (blockedImage) setGateMsg(`"${model}" doesn't support images — paste disabled.`);
   }
 
   async function addToProject(id: string) {
@@ -147,7 +167,9 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
 
   function submit() {
     const text = value.trim();
-    if ((!text && pending.length === 0) || disabled || streaming) return;
+    // Block send while an image is still being OCR'd: for a text-only model the
+    // parsed text IS the image's content, so sending mid-parse would lose it.
+    if ((!text && pending.length === 0) || disabled || streaming || parsingImage.size > 0) return;
     onSend(text, pending.map((p) => p.attachment));
     setValue("");
     setPending([]);
@@ -211,7 +233,14 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
                 className="mono flex items-center gap-1.5 rounded-[2px] border border-line bg-paper px-2 py-1 text-[11px] text-ink-2"
               >
                 {p.attachment.type === "image" ? (
-                  <img src={p.attachment.dataUrl} alt={p.attachment.name} className="h-7 w-7 rounded-[2px] object-cover" />
+                  <>
+                    <img src={p.attachment.dataUrl} alt={p.attachment.name} className="h-7 w-7 rounded-[2px] object-cover" />
+                    <span className="truncate max-w-[160px]">
+                      {parsingImage.has(p.id)
+                        ? "parsing…"
+                        : `OCR ${(p.attachment.charCount ?? 0).toLocaleString()}c`}
+                    </span>
+                  </>
                 ) : (
                   <span className="truncate max-w-[160px]">📎 {p.attachment.name} ({p.attachment.charCount.toLocaleString()}c)</span>
                 )}
@@ -245,7 +274,7 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
           <input
             ref={fileInputRef}
             type="file"
-            accept={visionEnabled ? `${TEXT_ACCEPT},image/*` : TEXT_ACCEPT}
+            accept={`${TEXT_ACCEPT},image/*`}
             multiple
             className="hidden"
             onChange={onPickChange}
@@ -254,7 +283,7 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || extracting}
-            title={visionEnabled ? "Attach files or images" : "Attach files (this model can't take images)"}
+            title="Attach files or images (images are OCR'd so any model can read them)"
             aria-label="Attach files"
             className="mono shrink-0 rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] tracking-wide text-ink-2 transition-colors hover:border-ink/40 disabled:opacity-40"
           >
@@ -299,7 +328,7 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, mo
           ) : (
             <button
               type="submit"
-              disabled={disabled || (!value.trim() && pending.length === 0)}
+              disabled={disabled || (!value.trim() && pending.length === 0) || parsingImage.size > 0}
               aria-label="Send"
               className="mono shrink-0 rounded-[3px] bg-ink px-3 py-1.5 text-[12px] tracking-wide text-paper-2 transition-opacity hover:opacity-90 disabled:opacity-30"
             >

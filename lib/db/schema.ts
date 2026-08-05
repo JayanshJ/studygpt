@@ -123,8 +123,10 @@ export interface SourceEntry {
 }
 
 // A single attachment on a user message. Stored as JSON in messages.attachments.
-// Images are kept as data URLs (sent to the model as image parts); text files
-// have their extracted text inlined into the prompt at send time.
+// Images are kept as data URLs and, for the parsing layer, carry their OCR'd
+// text so any model — even one without native vision — can ingest the image:
+// vision-capable models get the image part directly; text-only models get the
+// `text` inlined instead. Text files have their extracted text inlined too.
 export type Attachment =
-  | { type: "image"; name: string; mime: string; dataUrl: string }
+  | { type: "image"; name: string; mime: string; dataUrl: string; text?: string; charCount?: number }
   | { type: "file"; name: string; text: string; charCount: number };

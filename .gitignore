@@ -42,3 +42,7 @@ next-env.d.ts
 
 # runtime sqlite db
 /data
+
+# tesseract.js OCR language data cache
+*.traineddata
+tesseract-*.cache

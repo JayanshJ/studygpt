@@ -14,6 +14,7 @@ import {
   setMessageSources,
 } from "@/lib/db";
 import { embedText, decodeEmbedding, cosine } from "@/lib/embed";
+import { isVisionModel } from "@/lib/llm/vision";
 import type { SourceEntry, Attachment } from "@/lib/db";
 
 type ChatRole = "user" | "assistant" | "system";
@@ -31,19 +32,41 @@ interface ChatBody {
   editAttachments?: Attachment[] | null;
 }
 
-// Unfold a message's attachments into AI SDK message content. With no
-// attachments, content stays a plain string (unchanged behavior). With
-// attachments, content becomes an array of parts: one text part carrying the
-// typed text plus inlined file-text blocks, followed by one image part per
-// image attachment. File text is inlined (not a separate part type) so any
-// model can read it; images become image parts the provider maps to image_url.
-function toModelContent(content: string, attachments?: Attachment[]) {
+// Unfold a message's attachments into AI SDK message content, choosing how
+// each image is delivered based on whether the active chat model can see
+// images natively:
+// - vision-capable model → images become `image` parts (the provider maps them
+//   to image_url); file text is inlined into the leading text part.
+// - text-only model → each image's OCR'd text is inlined as a text block
+//   instead of an image part, so a model with no vision can still "see" the
+//   image's contents. (OCR happens at attach time in the client; the parsed
+//   text travels on the attachment.)
+//
+// With no attachments, content stays a plain string (unchanged behavior). With
+// attachments under a vision model, content becomes an array of parts. Under a
+// non-vision model everything collapses to a plain string (no image parts).
+function imageTextBlock(a: Extract<Attachment, { type: "image" }>): string {
+  const t = a.text && a.text.length > 0 ? a.text : "(no text detected)";
+  return `\n\n[Image: ${a.name}]\n${t}`;
+}
+
+function toModelContent(
+  content: string,
+  attachments: Attachment[] | undefined,
+  vision: boolean,
+): string | Array<{ type: "text"; text: string } | { type: "image"; image: string }> {
   if (!attachments || attachments.length === 0) return content;
   const files = attachments.filter((a): a is Extract<Attachment, { type: "file" }> => a.type === "file");
   const images = attachments.filter((a): a is Extract<Attachment, { type: "image" }> => a.type === "image");
   const fileBlock = files
     .map((f) => `\n\n[Attached file: ${f.name}]\n${f.text}`)
     .join("");
+
+  if (!vision) {
+    const imageBlock = images.map(imageTextBlock).join("");
+    return (content || "") + fileBlock + imageBlock;
+  }
+
   const parts: Array<{ type: "text"; text: string } | { type: "image"; image: string }> = [
     { type: "text", text: (content || "") + fileBlock },
     ...images.map((a) => ({ type: "image" as const, image: a.dataUrl })),
@@ -110,6 +133,10 @@ export async function POST(req: Request) {
   try {
     const provider = getProvider(cfg.provider);
     const modelId = conv.model || cfg.model;
+    // Whether THIS conversation's model can see images natively. Drives the
+    // parsing layer: vision-capable models get image parts; text-only models
+    // get the OCR'd text inlined instead (see toModelContent).
+    const visionEnabled = isVisionModel(modelId);
 
     if (provider.validate) {
       await provider.validate({ model: modelId, baseURL: cfg.baseURL, apiKey: cfg.apiKey });
@@ -214,7 +241,7 @@ export async function POST(req: Request) {
         m.role === "user"
           ? {
               role: "user" as const,
-              content: toModelContent(m.content, attachmentsForTurn(m, i, lastUserIdx, keepImageIdx)),
+              content: toModelContent(m.content, attachmentsForTurn(m, i, lastUserIdx, keepImageIdx), visionEnabled),
             }
           : { role: m.role, content: m.content },
       ),

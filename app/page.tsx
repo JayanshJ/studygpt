@@ -492,7 +492,6 @@ export default function Page() {
           onStop={stop}
           streaming={streaming}
           disabled={streaming || !conversation}
-          model={conversation?.model}
           projectId={conversation?.project_id ?? null}
           placeholder={
             conversation
