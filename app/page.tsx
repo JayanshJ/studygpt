@@ -423,6 +423,7 @@ export default function Page() {
                 key={m.id}
                 role={m.role}
                 content={m.content}
+                attachments={m.attachments}
                 streaming={streaming && m.id === assistantStreamId}
                 sources={m.sources}
                 canRegenerate={m.id === lastAssistantId}

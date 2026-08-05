@@ -6,13 +6,14 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { CodeBlock } from "./CodeBlock";
 import { SourcesPanel } from "./SourcesPanel";
-import type { SourceEntry } from "@/lib/db/schema";
+import type { SourceEntry, Attachment } from "@/lib/db/schema";
 
 interface Props {
   role: "user" | "assistant" | "system";
   content: string;
   streaming?: boolean;
   sources?: SourceEntry[];
+  attachments?: Attachment[] | null;
   onCopy?: () => void;
   onRegenerate?: () => void;
   onEdit?: (newContent: string) => void;
@@ -24,6 +25,7 @@ export function ChatMessage({
   content,
   streaming,
   sources,
+  attachments,
   onCopy,
   onRegenerate,
   onEdit,
@@ -112,6 +114,27 @@ export function ChatMessage({
           <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-ink">
             {content}
           </div>
+          {attachments && attachments.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {attachments.map((a, i) =>
+                a.type === "image" ? (
+                  <img
+                    key={i}
+                    src={a.dataUrl}
+                    alt={a.name}
+                    className="max-h-32 rounded-[2px] border border-line object-contain"
+                  />
+                ) : (
+                  <span
+                    key={i}
+                    className="mono rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[11px] text-ink-2"
+                  >
+                    📎 {a.name} ({a.charCount.toLocaleString()}c)
+                  </span>
+                ),
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
