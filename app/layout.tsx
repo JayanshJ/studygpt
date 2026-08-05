@@ -25,6 +25,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      // The no-flash theme script below sets data-theme on <html> before paint,
+      // so the client DOM carries an attribute the server HTML doesn't have.
+      // suppressHydrationWarning is the standard fix for this pattern
+      // (same approach next-themes uses).
+      suppressHydrationWarning
       className={`${newsreader.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <head>
