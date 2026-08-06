@@ -1,8 +1,9 @@
 import type { ConversationMode } from "@/lib/db/schema";
 import { CHAT_SYSTEM_PROMPT } from "./chat";
 import { FEYNMAN_SYSTEM_PROMPT } from "./feynman";
+import { DOCUMENT_SYSTEM_PROMPT } from "./document";
 
-export { CHAT_SYSTEM_PROMPT, FEYNMAN_SYSTEM_PROMPT };
+export { CHAT_SYSTEM_PROMPT, FEYNMAN_SYSTEM_PROMPT, DOCUMENT_SYSTEM_PROMPT };
 
 // Formatting constraints for mathematical outputs, appended to every system
 // prompt so equations render cleanly in the chat UI without breaking line
@@ -27,4 +28,13 @@ Formatting constraints for mathematical output (MUST follow):
 export function systemPromptFor(mode: ConversationMode): string {
   const base = mode === "feynman" ? FEYNMAN_SYSTEM_PROMPT : CHAT_SYSTEM_PROMPT;
   return base + MATH_FORMATTING_RULES;
+}
+
+// System prompt for a one-shot document turn (the "Document" send action).
+// Mirrors systemPromptFor(): document base + the shared math rules. The
+// retrieval contextBlock is appended by the chat route, just as it is for
+// the chat/feynman modes — so a document in a project conversation stays
+// grounded in the project's reference materials.
+export function documentSystemPrompt(): string {
+  return DOCUMENT_SYSTEM_PROMPT + MATH_FORMATTING_RULES;
 }

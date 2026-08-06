@@ -165,6 +165,9 @@ export default function Page() {
     editMessageId?: string;
     editContent?: string;
     editAttachments?: Attachment[];
+    // true for a one-shot document turn → optimistic assistant bubble is
+    // tagged kind='document' and the server uses the document-authoring prompt.
+    document?: boolean;
   }) {
     const conv = conversation;
     if (!conv) return;
@@ -175,6 +178,7 @@ export default function Page() {
       conversation_id: conv.id,
       role: "assistant",
       content: "",
+      kind: args.document ? "document" : "chat",
       attachments: null,
       tokens: null,
       created_at: Date.now(),
@@ -200,6 +204,7 @@ export default function Page() {
           editMessageId: args.editMessageId,
           editContent: args.editContent,
           editAttachments: args.editAttachments,
+          document: args.document,
         }),
         signal: controller.signal,
       });
@@ -224,7 +229,8 @@ export default function Page() {
       if (controller.signal.aborted) {
         if (acc) {
           // Stopped mid-stream — keep the partial and persist it (idempotent:
-          // if onFinish already wrote the full reply, this is a no-op).
+          // if onFinish already wrote the full reply, this is a no-op). Pass
+          // the optimistic bubble's kind so a stopped document stays a document.
           fetch("/api/messages", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -233,6 +239,7 @@ export default function Page() {
               messageId: args.assistantId,
               role: "assistant",
               content: acc,
+              kind: args.document ? "document" : "chat",
             }),
           }).catch(() => {});
         } else {
@@ -266,13 +273,14 @@ export default function Page() {
     }
   }
 
-  async function sendMessage(text: string, attachments: Attachment[]) {
+  async function sendMessage(text: string, attachments: Attachment[], document = false) {
     if (!conversation || streaming) return;
     const userMsg: MessageWithSources = {
       id: crypto.randomUUID(),
       conversation_id: conversation.id,
       role: "user",
       content: text,
+      kind: "chat",
       attachments: attachments.length ? attachments : null,
       tokens: null,
       created_at: Date.now(),
@@ -294,6 +302,7 @@ export default function Page() {
       baseDisplay: outgoing,
       assistantId: crypto.randomUUID(),
       userMessageId: userMsg.id,
+      document,
     });
   }
 
@@ -320,6 +329,9 @@ export default function Page() {
       baseDisplay,
       assistantId: crypto.randomUUID(),
       replaceAssistantId: lastAssistant.id,
+      // Regenerating a document stays a document (keeps the document prompt +
+      // document card); regenerating a chat reply stays chat.
+      document: lastAssistant.kind === "document",
     });
   }
 
@@ -465,9 +477,11 @@ export default function Page() {
             {messages.map((m) => (
               <ChatMessage
                 key={m.id}
+                id={m.id}
                 role={m.role}
                 content={m.content}
                 attachments={m.attachments}
+                kind={m.kind}
                 streaming={streaming && m.id === assistantStreamId}
                 sources={m.sources}
                 canRegenerate={m.id === lastAssistantId}

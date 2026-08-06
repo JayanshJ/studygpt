@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { SCHEMA_SQL, type Conversation, type Message, type ConversationMode, type Attachment } from "./schema";
+import { SCHEMA_SQL, type Conversation, type Message, type ConversationMode, type MessageKind, type Attachment } from "./schema";
 import { estimateTokens } from "@/lib/tokens";
 
 // Keep one connection across hot-reloads in dev so we don't lock the file.
@@ -34,6 +34,13 @@ function open(): Database.Database {
   // Settings page can show a global token count as a single SUM.
   if (!msgCols.some((c) => c.name === "tokens")) {
     db.exec("ALTER TABLE messages ADD COLUMN tokens INTEGER");
+  }
+  // Additive migration: add messages.kind so a one-shot authored document
+  // (the "Document" send action) is tagged 'document' and rendered as a
+  // document card + print action, vs. a normal 'chat' reply. Existing rows
+  // get 'chat' from the column default — no backfill needed.
+  if (!msgCols.some((c) => c.name === "kind")) {
+    db.exec("ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'");
   }
   // One-time backfill: estimate tokens for rows that predate the column.
   const tokenless = db
@@ -147,12 +154,14 @@ export function addMessage(
   id?: string,
   attachments?: Message["attachments"],
   tokens?: number,
+  kind?: MessageKind,
 ): Message {
   const row: Message = {
     id: id ?? crypto.randomUUID(),
     conversation_id: conversationId,
     role,
     content,
+    kind: kind ?? "chat",
     attachments: attachments ?? null,
     tokens: tokens ?? null,
     created_at: Date.now(),
@@ -162,8 +171,8 @@ export function addMessage(
   // uses upsertMessage instead so a completing full reply overwrites a
   // partial — see upsertMessage.)
   db.prepare(
-    "INSERT OR IGNORE INTO messages (id, conversation_id, role, content, attachments, tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(row.id, row.conversation_id, row.role, row.content, JSON.stringify(row.attachments), row.tokens, row.created_at);
+    "INSERT OR IGNORE INTO messages (id, conversation_id, role, content, kind, attachments, tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(row.id, row.conversation_id, row.role, row.content, row.kind, JSON.stringify(row.attachments), row.tokens, row.created_at);
   return row;
 }
 
@@ -176,22 +185,44 @@ export function upsertMessage(
   content: string,
   id: string,
   tokens?: number,
+  kind?: MessageKind,
 ): Message {
   const row: Message = {
     id,
     conversation_id: conversationId,
     role,
     content,
+    kind: kind ?? "chat",
     attachments: null,
     tokens: tokens ?? null,
     created_at: Date.now(),
   };
   db.prepare(
-    `INSERT INTO messages (id, conversation_id, role, content, attachments, tokens, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET content = excluded.content, tokens = excluded.tokens`,
-  ).run(row.id, row.conversation_id, row.role, row.content, JSON.stringify(row.attachments), row.tokens, row.created_at);
+    `INSERT INTO messages (id, conversation_id, role, content, kind, attachments, tokens, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET content = excluded.content, tokens = excluded.tokens, kind = excluded.kind`,
+  ).run(row.id, row.conversation_id, row.role, row.content, row.kind, JSON.stringify(row.attachments), row.tokens, row.created_at);
   return row;
+}
+
+// Fetch a single message by id (used by the print page's content fetch).
+// Returns null if the id doesn't exist. attachments is JSON-parsed like
+// listMessages.
+export function getMessage(id: string): Message | null {
+  const r = db
+    .prepare("SELECT * FROM messages WHERE id = ?")
+    .get(id) as (Omit<Message, "attachments"> & { attachments: string | null }) | undefined;
+  if (!r) return null;
+  let attachments: Message["attachments"] = null;
+  if (r.attachments) {
+    try {
+      const parsed = JSON.parse(r.attachments);
+      if (Array.isArray(parsed)) attachments = parsed as Message["attachments"];
+    } catch {
+      attachments = null;
+    }
+  }
+  return { ...r, attachments };
 }
 
 // Recompute + store a message's token estimate (e.g. after an edit changes
@@ -273,4 +304,4 @@ export function getAllSettings(): Record<string, string> {
 export * from "./projects";
 export * from "./materials";
 export * from "./sources";
-export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment } from "./schema";
+export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment, Message, MessageKind } from "./schema";

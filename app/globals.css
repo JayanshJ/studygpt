@@ -206,3 +206,20 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4a4b49; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* Print / Save-as-PDF — for the /print/[id] document page. Strip the app
+   chrome (anything tagged .no-print: back link, print button, code copy
+   buttons), give a clean white page with sensible margins, and keep
+   headings/code/tables/math from splitting across a page break. */
+@page { margin: 2cm; }
+
+@media print {
+  .no-print { display: none !important; }
+  html, body { background: #ffffff !important; }
+  .print-sheet { max-width: none; margin: 0; padding: 0; background: #ffffff !important; }
+  .prose-chat { font-size: 11pt; line-height: 1.5; color: #1f2020; }
+  .prose-chat h1, .prose-chat h2, .prose-chat h3 { break-after: avoid; }
+  .prose-chat pre, .prose-chat table, .prose-chat blockquote, .prose-chat .katex-display { break-inside: avoid; }
+  .prose-chat pre { white-space: pre-wrap; word-break: break-word; }
+  .prose-chat a { color: #1f2020; text-decoration: underline; }
+}

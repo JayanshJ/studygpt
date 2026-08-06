@@ -1,6 +1,6 @@
 import { streamText } from "ai";
 import { getProvider, getModelConfig } from "@/lib/llm/provider";
-import { systemPromptFor } from "@/lib/prompts";
+import { systemPromptFor, documentSystemPrompt } from "@/lib/prompts";
 import {
   getConversation,
   addMessage,
@@ -32,6 +32,10 @@ interface ChatBody {
   editMessageId?: string;
   editContent?: string;
   editAttachments?: Attachment[] | null;
+  // When true, this turn produces a one-shot authored document instead of a
+  // conversational reply: the system prompt becomes the document-authoring
+  // prompt and the persisted assistant message is tagged kind='document'.
+  document?: boolean;
 }
 
 // Unfold a message's attachments into AI SDK message content, choosing how
@@ -123,6 +127,7 @@ export async function POST(req: Request) {
     editMessageId,
     editContent,
     editAttachments,
+    document,
   } = body;
   if (!conversationId || !Array.isArray(messages)) {
     return new Response("Missing conversationId or messages", { status: 400 });
@@ -252,7 +257,10 @@ export async function POST(req: Request) {
 
     const result = streamText({
       model,
-      system: systemPromptFor(conv.mode) + contextBlock,
+      // A document turn swaps in the authoring prompt; a normal turn uses the
+      // conversation's mode prompt. Retrieval contextBlock is appended either
+      // way so project-grounded documents still cite their sources.
+      system: (document ? documentSystemPrompt() : systemPromptFor(conv.mode)) + contextBlock,
       messages: messages.map((m, i) =>
         m.role === "user"
           ? {
@@ -275,7 +283,7 @@ export async function POST(req: Request) {
               : estimateTokens(reply);
           // Trim trailing whitespace so a model-emitted trailing newline
           // doesn't render as a blank line on reload.
-          upsertMessage(conversationId, "assistant", reply, assistantMessageId, tokens);
+          upsertMessage(conversationId, "assistant", reply, assistantMessageId, tokens, document ? "document" : undefined);
         }
       },
     });

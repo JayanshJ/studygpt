@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, type FormEvent, type KeyboardEvent, type C
 import type { Attachment } from "@/lib/db/schema";
 
 interface Props {
-  onSend: (text: string, attachments: Attachment[]) => void;
+  onSend: (text: string, attachments: Attachment[], document: boolean) => void;
   disabled?: boolean;
   placeholder?: string;
   streaming?: boolean;
@@ -81,6 +81,11 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
   const [addingToProject, setAddingToProject] = useState<string | null>(null);
   const [gateMsg, setGateMsg] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
+  // Armed for the next send → the message becomes a one-shot authored
+  // document (document-authoring prompt + kind='document' + a document card
+  // with a Print/Save-as-PDF action). Resets after sending so follow-ups are
+  // normal chat replies unless re-armed.
+  const [docMode, setDocMode] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -236,11 +241,12 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
     // Block send while an image is still being OCR'd: for a text-only model the
     // parsed text IS the image's content, so sending mid-parse would lose it.
     if ((!text && pending.length === 0) || disabled || streaming || parsingImage.size > 0) return;
-    onSend(text, pending.map((p) => p.attachment));
+    onSend(text, pending.map((p) => p.attachment), docMode);
     setValue("");
     setPending([]);
     setAddedToProject(new Set());
     setGateMsg(null);
+    setDocMode(false);
   }
 
   function onSubmit(e: FormEvent) {
@@ -355,6 +361,20 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
           >
             +
           </button>
+          <button
+            type="button"
+            onClick={() => setDocMode((v) => !v)}
+            disabled={disabled}
+            aria-pressed={docMode}
+            title="Send this message as a formatted document you can print to PDF"
+            className={`mono shrink-0 rounded-[3px] border px-2 py-1.5 text-[12px] tracking-wide transition-colors disabled:opacity-40 ${
+              docMode
+                ? "border-rule text-rule hover:bg-rule/10"
+                : "border-line bg-paper text-ink-2 hover:border-ink/40"
+            }`}
+          >
+            doc
+          </button>
           {speechSupported && (
             <button
               type="button"
@@ -398,7 +418,7 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
               aria-label="Send"
               className="mono shrink-0 rounded-[3px] bg-ink px-3 py-1.5 text-[12px] tracking-wide text-paper-2 transition-opacity hover:opacity-90 disabled:opacity-30"
             >
-              send ↵
+              {docMode ? "send doc ↵" : "send ↵"}
             </button>
           )}
         </div>

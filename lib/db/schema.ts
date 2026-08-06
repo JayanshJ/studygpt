@@ -18,6 +18,7 @@ export const SCHEMA_SQL = [
     conversation_id TEXT NOT NULL,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'chat',
     created_at INTEGER NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
   )`,
@@ -66,6 +67,12 @@ export const SCHEMA_SQL = [
 
 export type ConversationMode = "chat" | "feynman";
 
+// Per-message output kind. "chat" is the default conversational reply;
+// "document" marks a one-shot authored document (the "Document" send action)
+// so the chat renders it as a document card with a Print/Save-as-PDF action
+// rather than a normal chat bubble.
+export type MessageKind = "chat" | "document";
+
 export interface Conversation {
   id: string;
   title: string;
@@ -80,6 +87,7 @@ export interface Message {
   conversation_id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  kind: MessageKind;
   attachments: Attachment[] | null;
   // Rough token estimate (see lib/tokens). Stored so the global token count in
   // Settings is a single SUM, not a full table scan in the client. Null only

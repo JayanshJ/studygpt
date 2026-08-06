@@ -1,12 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import { CodeBlock } from "./CodeBlock";
+import { Markdown } from "./Markdown";
 import { SourcesPanel } from "./SourcesPanel";
-import { normalizeMathDelimiters } from "@/lib/markdown/normalize-math";
 import { estimateTokens, userTurnText } from "@/lib/tokens";
 import type { SourceEntry, Attachment } from "@/lib/db/schema";
 
@@ -37,6 +33,11 @@ interface Props {
   streaming?: boolean;
   sources?: SourceEntry[];
   attachments?: Attachment[] | null;
+  // 'document' marks a one-shot authored document — rendered as a wider
+  // page-like sheet with a Print/Save-as-PDF action instead of the chat
+  // bubble. The print link needs the message id.
+  kind?: "chat" | "document";
+  id?: string;
   onCopy?: () => void;
   onRegenerate?: () => void;
   onEdit?: (newContent: string, attachments: Attachment[]) => void;
@@ -49,6 +50,8 @@ export function ChatMessage({
   streaming,
   sources,
   attachments,
+  kind,
+  id,
   onCopy,
   onRegenerate,
   onEdit,
@@ -223,6 +226,47 @@ export function ChatMessage({
     );
   }
 
+  if (kind === "document") {
+    return (
+      <div className="group flex justify-start">
+        <div className="max-w-[680px] rounded-[3px] border border-line bg-paper-2 px-8 py-7 shadow-[0_1px_2px_rgba(31,32,32,0.04)]">
+          <div className="mono mb-3 flex items-center gap-2 text-[10px] tracking-wide text-ink-3">
+            <span className="h-1 w-1 rounded-full bg-rule" />
+            document
+            <span>· {tok.toLocaleString()} tok</span>
+            <div className="ml-auto flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+              <button onClick={copy} aria-label="Copy document" className="hover:text-ink">
+                {copied ? "copied" : "copy"}
+              </button>
+              {canRegenerate && onRegenerate && !streaming && (
+                <button onClick={onRegenerate} aria-label="Regenerate" className="hover:text-ink">
+                  regen
+                </button>
+              )}
+            </div>
+          </div>
+          <Markdown content={content} className="prose-chat text-ink" />
+          {streaming && (
+            <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
+          )}
+          {!streaming && id && (
+            <div className="mono mt-5 flex items-center gap-3 text-[12px] tracking-wide">
+              <button
+                type="button"
+                onClick={() => window.open(`/print/${id}`, "_blank")}
+                className="rounded-[3px] bg-ink px-4 py-1.5 text-paper-2 transition-opacity hover:opacity-90"
+              >
+                open &amp; print →
+              </button>
+              <span className="text-ink-3">opens a clean page · ⌘P → save as PDF</span>
+            </div>
+          )}
+          {!streaming && <SourcesPanel sources={sources ?? []} />}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="group flex justify-start">
       <div className="msg-bubble max-w-[85%] rounded-[3px] border border-line bg-paper-2 px-5 py-4 shadow-[0_1px_2px_rgba(31,32,32,0.04)]">
@@ -241,18 +285,10 @@ export function ChatMessage({
             )}
           </div>
         </div>
-        <div className="prose-chat text-ink">
-          <ReactMarkdown
-            remarkPlugins={[remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-            components={{ pre: CodeBlock }}
-          >
-            {normalizeMathDelimiters(content || "")}
-          </ReactMarkdown>
-          {streaming && (
-            <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
-          )}
-        </div>
+        <Markdown content={content} className="prose-chat text-ink" />
+        {streaming && (
+          <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
+        )}
         {!streaming && <SourcesPanel sources={sources ?? []} />}
       </div>
     </div>

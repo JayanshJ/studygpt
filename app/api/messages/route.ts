@@ -1,11 +1,16 @@
 import { addMessage } from "@/lib/db";
 import { estimateTokens } from "@/lib/tokens";
+import type { MessageKind } from "@/lib/db/schema";
 
 interface Body {
   conversationId?: string;
   messageId?: string;
   role?: "user" | "assistant" | "system";
   content?: string;
+  // Preserve the document tag when stop-persisting a partial document stream,
+  // so a stopped document still renders as a document card on reload. If
+  // omitted, addMessage defaults to 'chat'.
+  kind?: MessageKind;
 }
 
 // PATCH { conversationId, messageId, role, content }
@@ -19,7 +24,7 @@ export async function PATCH(req: Request) {
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
-  const { conversationId, messageId, role, content } = body;
+  const { conversationId, messageId, role, content, kind } = body;
   const validRoles = ["user", "assistant", "system"];
   if (
     !conversationId ||
@@ -33,6 +38,6 @@ export async function PATCH(req: Request) {
   // Store a token estimate so even a stopped partial counts toward the
   // global token total. If onFinish later writes the full reply, its INSERT
   // OR IGNORE is a no-op and the full reply's tokens win via upsertMessage.
-  addMessage(conversationId, role, content, messageId, undefined, estimateTokens(content));
+  addMessage(conversationId, role, content, messageId, undefined, estimateTokens(content), kind);
   return new Response("OK", { status: 200 });
 }

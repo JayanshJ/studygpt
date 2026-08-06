@@ -37,7 +37,7 @@ export function CodeBlock({ children }: PreProps) {
       <button
         onClick={copy}
         aria-label="Copy code"
-        className="mono absolute right-2 top-2 z-10 rounded-[2px] border border-line bg-paper-2 px-1.5 py-0.5 text-[10px] tracking-wide text-ink-3 opacity-0 transition-opacity hover:text-ink group-hover:opacity-100"
+        className="no-print mono absolute right-2 top-2 z-10 rounded-[2px] border border-line bg-paper-2 px-1.5 py-0.5 text-[10px] tracking-wide text-ink-3 opacity-0 transition-opacity hover:text-ink group-hover:opacity-100"
       >
         {copied ? "copied" : "copy"}
       </button>
