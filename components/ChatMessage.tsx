@@ -251,14 +251,15 @@ export function ChatMessage({
           )}
           {!streaming && id && (
             <div className="mono mt-5 flex items-center gap-3 text-[12px] tracking-wide">
-              <button
-                type="button"
-                onClick={() => window.open(`/print/${id}`, "_blank")}
+              <a
+                href={`/print/${id}`}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="rounded-[3px] bg-ink px-4 py-1.5 text-paper-2 transition-opacity hover:opacity-90"
               >
-                open &amp; print →
-              </button>
-              <span className="text-ink-3">opens a clean page · ⌘P → save as PDF</span>
+                download PDF →
+              </a>
+              <span className="text-ink-3">opens a clean page, then click save as PDF</span>
             </div>
           )}
           {!streaming && <SourcesPanel sources={sources ?? []} />}
