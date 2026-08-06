@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Skeleton } from "@/components/Skeleton";
 
 interface Config {
   provider: string;
@@ -50,7 +51,27 @@ export default function SettingsPage() {
   }
 
   if (!config) {
-    return <div className="mono p-8 text-sm text-ink-3">Loading settings…</div>;
+    return (
+      <div className="graph-paper min-h-screen">
+        <div className="mx-auto max-w-xl px-6 py-14">
+          <p className="mono mb-2 text-[11px] tracking-[0.2em] text-rule">SETTINGS</p>
+          <Skeleton className="h-7 w-64" />
+          <Skeleton className="mt-3 h-4 w-full max-w-md" />
+          <div className="mt-7 flex items-baseline gap-3 border-y border-line py-3">
+            <Skeleton className="h-3.5 w-28" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+          <div className="mt-9 flex flex-col gap-7">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="flex flex-col gap-2">
+                <Skeleton className="h-3.5 w-20" />
+                <Skeleton className="h-5 w-full" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

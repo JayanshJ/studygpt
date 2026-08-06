@@ -229,7 +229,7 @@ export function ChatMessage({
   if (kind === "document") {
     return (
       <div className="group flex justify-start">
-        <div className="max-w-[680px] rounded-[3px] border border-line bg-paper-2 px-8 py-7 shadow-[0_1px_2px_rgba(31,32,32,0.04)]">
+        <div className="max-w-[680px] rounded-[3px] border border-line bg-paper-2 px-8 py-7 shadow-card">
           <div className="mono mb-3 flex items-center gap-2 text-[10px] tracking-wide text-ink-3">
             <span className="h-1 w-1 rounded-full bg-rule" />
             document
@@ -270,7 +270,7 @@ export function ChatMessage({
 
   return (
     <div className="group flex justify-start">
-      <div className="msg-bubble max-w-[85%] rounded-[3px] border border-line bg-paper-2 px-5 py-4 shadow-[0_1px_2px_rgba(31,32,32,0.04)]">
+      <div className="msg-bubble max-w-[85%] rounded-[3px] border border-line bg-paper-2 px-5 py-4 shadow-card">
         <div className="mono mb-1.5 flex items-center gap-1.5 text-[10px] tracking-wide text-ink-3">
           <span className="h-1 w-1 rounded-full bg-rule" />
           studygpt

@@ -12,11 +12,12 @@
   --paper-3: #eae8dc;   /* deeper paper — sidebar/binding */
   --ink: #1f2020;       /* near-black, warm-neutral */
   --ink-2: #565850;     /* muted ink — secondary text */
-  --ink-3: #8b8d83;     /* faint — captions */
+  --ink-3: #6f7166;     /* faint — captions (bumped for WCAG AA on paper) */
   --rule: #c8443a;      /* red notebook margin rule (signature accent) */
   --feynman: #2e5c8a;   /* chalk blue — Feynman-mode accent */
   --line: #d7d5c8;      /* hairlines */
   --grid: rgba(31, 32, 32, 0.045); /* faint graph-paper grid */
+  --shadow-card: 0 1px 2px rgba(31, 32, 32, 0.06), 0 1px 1px rgba(31, 32, 32, 0.03);
 }
 
 html[data-theme="dark"] {
@@ -25,11 +26,12 @@ html[data-theme="dark"] {
   --paper-3: #131414;
   --ink: #ecead8;
   --ink-2: #a8a99e;
-  --ink-3: #76766c;
+  --ink-3: #9a9b8e;
   --rule: #d9685a;
   --feynman: #7aa8d8;
   --line: #3a3b39;
   --grid: rgba(236, 234, 216, 0.05);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.34), 0 1px 1px rgba(0, 0, 0, 0.20);
 }
 
 @theme inline {
@@ -44,6 +46,7 @@ html[data-theme="dark"] {
   --color-line: var(--line);
   --font-serif: var(--font-newsreader);
   --font-mono: var(--font-jetbrains);
+  --shadow-card: var(--shadow-card);
 }
 
 html {
@@ -77,6 +80,97 @@ body {
   font-family: var(--font-mono), ui-monospace, monospace;
   letter-spacing: 0.01em;
 }
+
+/* ---- Onboarding / display helpers -----------------------------------
+   Evolved Graph Paper Lab: a bolder, more modern variant of the notebook
+   look for the welcome hero and empty states. Tokens only — no new colors or
+   fonts — so they stay on-palette and theme with the rest of the app. */
+
+/* Small tracked mono label that announces a section. */
+.eyebrow {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--rule);
+}
+
+/* Large display headline for the welcome hero. */
+.hero-title {
+  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
+  font-size: 2.4rem;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Lede paragraph beneath the hero title — clamped to a comfortable measure. */
+.hero-lede {
+  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  max-width: 38ch;
+}
+
+/* A notebook-page surface: a fresh-paper card with the red margin rule as a
+   2px bar pinned to the left edge — the signature made bolder for the hero. */
+.page-card {
+  position: relative;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  border-radius: 3px;
+  box-shadow: var(--shadow-card);
+}
+.page-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 2px;
+  background: var(--rule);
+  border-radius: 2px;
+}
+
+/* Suggestion chip — clickable, low-key, on-palette. */
+.chip {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  border-radius: 2px;
+  padding: 0.42em 0.7em;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+.chip:hover {
+  border-color: color-mix(in oklab, var(--ink) 40%, transparent);
+  color: var(--ink);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* Primary filled action button (the existing send/print pattern, factored). */
+.btn-primary {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  background: var(--ink);
+  color: var(--paper-2);
+  border: 0;
+  border-radius: 3px;
+  padding: 0.5em 1em;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* ---- Markdown rendered chat content ----
    Read-first: comfortable line-height and generous block spacing so the
@@ -132,14 +226,11 @@ body {
   border-radius: 3px;
 }
 html[data-theme="dark"] .prose-chat code { background: rgba(236, 234, 216, 0.10); }
-/* Assistant message bubble — the hardcoded light-tint shadow is invisible on
-   dark paper; re-apply a subtle dark shadow so the card keeps its elevation. */
-html[data-theme="dark"] .msg-bubble { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.30); }
 .prose-chat pre {
   background: var(--paper-3);
   border: 1px solid var(--line);
   padding: 0.85em 1em;
-  border-radius: 4px;
+  border-radius: 3px;
   overflow-x: auto;
   margin: 0.4em 0;
   font-size: 0.85rem;

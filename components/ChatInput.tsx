@@ -10,6 +10,11 @@ interface Props {
   streaming?: boolean;
   onStop?: () => void;
   projectId?: string | null;
+  // Seed the composer with a prompt (used by the welcome screen's suggestion
+  // chips, which create a conversation then hand the user a ready-to-send
+  // prompt). Only applied once per new value, so re-renders or the parent
+  // clearing the prop never clobber something the user is already typing.
+  initialText?: string;
 }
 
 const TEXT_ACCEPT =
@@ -72,7 +77,7 @@ function downscaleImage(file: File): Promise<{ blob: File; dataUrl: string }> {
   });
 }
 
-export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, projectId }: Props) {
+export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, projectId, initialText }: Props) {
   const [value, setValue] = useState("");
   const [pending, setPending] = useState<Array<{ id: string; attachment: Attachment; file?: File }>>([]);
   const [extracting, setExtracting] = useState(false);
@@ -110,6 +115,19 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   }, [value]);
+
+  // Seed the composer from `initialText` (welcome-screen suggestion chips).
+  // The seededRef guard ensures we apply each prompt only once per distinct
+  // value, so a re-render with the same prop — or the parent clearing it to
+  // undefined after — never overwrites text the user is already editing.
+  const seededRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (initialText && initialText !== seededRef.current) {
+      seededRef.current = initialText;
+      setValue(initialText);
+      ref.current?.focus();
+    }
+  }, [initialText]);
 
   // Add an image attachment. All models accept images: vision-capable models
   // Add an image attachment. All models accept images: vision-capable models

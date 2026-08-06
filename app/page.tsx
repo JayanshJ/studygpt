@@ -19,6 +19,22 @@ type MessageWithSources = Message & { sources?: SourceEntry[] };
 
 type ChatAction = "send" | "regenerate" | "edit";
 
+// Starter prompts for the empty states. The welcome hero and a brand-new
+// conversation both surface these as one-click chips; the in-conversation
+// set is mode-aware so Feynman mode offers "teach me" prompts instead.
+const CHAT_SUGGESTIONS = [
+  "Explain the derivative",
+  "What are eigenvalues?",
+  "Derive the quadratic formula",
+  "Compare mitosis vs meiosis",
+];
+const FEYNMAN_SUGGESTIONS = [
+  "Teach me logarithms",
+  "Explain photosynthesis back to me",
+  "How do transformers work?",
+  "What is recursion?",
+];
+
 export default function Page() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -33,13 +49,23 @@ export default function Page() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectMaterialCount, setActiveProjectMaterialCount] = useState<number | null>(null);
   const [models, setModels] = useState<Array<{ id: string; vision: boolean }>>([]);
+  // True until the first conversations fetch resolves — drives the sidebar's
+  // skeleton rows so the first paint doesn't look like an empty account.
+  const [convLoading, setConvLoading] = useState(true);
+  // A prompt handed to the composer from the welcome screen's suggestion
+  // chips (create-then-prefill). Cleared once the conversation exists.
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastRunRef = useRef<Parameters<typeof runChat>[0] | null>(null);
 
   const loadConversations = useCallback(async () => {
-    const res = await fetch("/api/conversations");
-    if (res.ok) setConversations(await res.json());
+    try {
+      const res = await fetch("/api/conversations");
+      if (res.ok) setConversations(await res.json());
+    } finally {
+      setConvLoading(false);
+    }
   }, []);
 
   const loadProjects = useCallback(async () => {
@@ -53,7 +79,6 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadConversations();
   }, [loadConversations]);
 
@@ -115,6 +140,17 @@ export default function Page() {
     setActiveId(conv.id);
     setConversation(conv);
     setMessages([]);
+  }
+
+  // A welcome-screen suggestion chip: create a conversation and seed the
+  // composer with the prompt so the user lands on a ready-to-send first turn
+  // (gentle — they review and press Enter). We hand the prompt to ChatInput
+  // via `pendingPrompt`/`initialText`, then clear it once the conversation
+  // exists so a later re-render doesn't re-seed.
+  async function welcomeChip(text: string) {
+    setPendingPrompt(text);
+    await newConversation();
+    setPendingPrompt(null);
   }
 
   async function deleteConversation(id: string) {
@@ -376,6 +412,7 @@ export default function Page() {
           projects={projects}
           activeProjectId={activeProjectId}
           onProjectChange={setActiveProjectId}
+          loading={convLoading}
         />
       </div>
 
@@ -398,6 +435,7 @@ export default function Page() {
               projects={projects}
               activeProjectId={activeProjectId}
               onProjectChange={setActiveProjectId}
+              loading={convLoading}
             />
           </div>
         </>
@@ -462,16 +500,63 @@ export default function Page() {
         <div ref={scrollRef} className="graph-paper flex-1 overflow-y-auto px-4 py-8">
           <div className="mx-auto flex max-w-3xl flex-col gap-5">
             {!conversation && (
-              <div className="mx-auto mt-24 max-w-md text-center">
-                <p className="mono mb-3 text-[11px] tracking-[0.2em] text-rule">NOTEBOOK</p>
-                <h1 className="text-[1.6rem] leading-tight text-ink">
-                  Start a conversation to study a concept.
-                </h1>
-                <p className="mt-3 text-[15px] text-ink-2">
-                  Ask about the derivative, eigenvalues, or entropy — then flip on{" "}
-                  <span className="text-feynman">Feynman</span> to learn by explaining it
-                  back.
-                </p>
+              <div className="mx-auto mt-20 w-full max-w-[520px]">
+                <div className="page-card px-8 py-10 sm:px-10">
+                  <p className="eyebrow">Study Notebook</p>
+                  <h1 className="hero-title mt-4">
+                    Study anything,
+                    <br />
+                    one concept at a time.
+                  </h1>
+                  <p className="hero-lede mt-4">
+                    Ask about the derivative, eigenvalues, or entropy — then flip on{" "}
+                    <span className="text-feynman">Feynman</span> to learn by explaining it
+                    back.
+                  </p>
+                  <div className="mt-7">
+                    <button
+                      type="button"
+                      onClick={() => newConversation()}
+                      className="btn-primary"
+                    >
+                      + start a conversation
+                    </button>
+                  </div>
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    {CHAT_SUGGESTIONS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => welcomeChip(s)}
+                        className="chip"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            {conversation && messages.length === 0 && !streaming && (
+              <div className="mx-auto mt-20 w-full max-w-[520px] text-center">
+                <p className="eyebrow">Ask</p>
+                <h2 className="mt-4 text-[1.4rem] leading-tight text-ink">
+                  Ask your first question.
+                </h2>
+                <div className="mt-6 flex flex-wrap justify-center gap-2">
+                  {(conversation.mode === "feynman" ? FEYNMAN_SUGGESTIONS : CHAT_SUGGESTIONS).map(
+                    (s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => sendMessage(s, [])}
+                        className="chip"
+                      >
+                        {s}
+                      </button>
+                    ),
+                  )}
+                </div>
               </div>
             )}
             {messages.map((m) => (
@@ -509,6 +594,7 @@ export default function Page() {
           streaming={streaming}
           disabled={streaming || !conversation}
           projectId={conversation?.project_id ?? null}
+          initialText={pendingPrompt ?? undefined}
           placeholder={
             conversation
               ? conversation.mode === "feynman"

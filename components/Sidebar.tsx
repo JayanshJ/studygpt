@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { Conversation, Project } from "@/lib/db/schema";
 import { ThemeToggle } from "./ThemeToggle";
 import { ProjectSwitcher } from "./ProjectSwitcher";
+import { Skeleton } from "./Skeleton";
 
 interface Props {
   conversations: Conversation[];
@@ -16,6 +17,10 @@ interface Props {
   projects: Project[];
   activeProjectId: string | null;
   onProjectChange: (id: string | null) => void;
+  // True until the first conversations fetch resolves. While true AND the list
+  // is empty, show skeleton rows instead of "no conversations yet" — otherwise
+  // every load briefly looks like an empty account.
+  loading?: boolean;
 }
 
 export function Sidebar({
@@ -29,6 +34,7 @@ export function Sidebar({
   projects,
   activeProjectId,
   onProjectChange,
+  loading = false,
 }: Props) {
   const scoped = activeProjectId
     ? conversations.filter((c) => c.project_id === activeProjectId)
@@ -80,7 +86,17 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
-        {filtered.length === 0 && (
+        {loading && scoped.length === 0 && (
+          <div className="px-1 pt-1">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center gap-2 px-2 py-2">
+                <Skeleton className="h-3.5 flex-1" />
+                <Skeleton className="h-3 w-4" />
+              </div>
+            ))}
+          </div>
+        )}
+        {!loading && filtered.length === 0 && (
           <p className="mono px-2 py-4 text-[11px] text-ink-3">
             {scoped.length === 0
               ? activeProjectId
