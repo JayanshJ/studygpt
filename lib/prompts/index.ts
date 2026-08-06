@@ -25,16 +25,28 @@ Formatting constraints for mathematical output (MUST follow):
 
   Then continue the explanation.`;
 
+// When the user asks to visualize / render / draw / plot / diagram / build
+// something visual or interactive, the model emits a single ```artifact fenced
+// block containing a complete, self-contained HTML document; the chat renders
+// it inline in a sandboxed iframe (see components/Artifact.tsx). Appended to
+// every mode's prompt so the capability is available everywhere.
+export const ARTIFACT_RULES = `
+Inline visualization artifacts:
+- When the user asks you to visualize, render, draw, plot, diagram, animate, or build something visual or interactive, emit a SINGLE fenced code block with the language \`artifact\` containing a COMPLETE, self-contained HTML document that renders it in a browser.
+- The artifact renders in a sandboxed iframe. Use inline <style> and <script>. You MAY load libraries from a CDN with <script src="https://..."> (e.g. Chart.js, Plotly, D3, Mermaid, KaTeX, Three.js). It cannot access the parent page, so be fully self-contained: inline your data as JS.
+- Make it work standalone: full HTML structure, sensible responsive width, a reasonable height, and your data inline. For charts use Chart.js or Plotly; for diagrams use Mermaid or D3 or hand-drawn SVG; for math use KaTeX from CDN.
+- Emit an \`artifact\` block ONLY when the user explicitly wants a visual/interactive output. For ordinary code answers, use normal fenced code blocks with the real language. You may add a short prose explanation before the artifact, but the artifact block itself must contain ONLY the HTML.`;
+
 export function systemPromptFor(mode: ConversationMode): string {
   const base = mode === "feynman" ? FEYNMAN_SYSTEM_PROMPT : CHAT_SYSTEM_PROMPT;
-  return base + MATH_FORMATTING_RULES;
+  return base + MATH_FORMATTING_RULES + ARTIFACT_RULES;
 }
 
 // System prompt for a one-shot document turn (the "Document" send action).
-// Mirrors systemPromptFor(): document base + the shared math rules. The
-// retrieval contextBlock is appended by the chat route, just as it is for
-// the chat/feynman modes — so a document in a project conversation stays
-// grounded in the project's reference materials.
+// Mirrors systemPromptFor(): document base + the shared math rules + artifact
+// rules. The retrieval contextBlock is appended by the chat route, just as it
+// is for the chat/feynman modes — so a document in a project conversation
+// stays grounded in the project's reference materials.
 export function documentSystemPrompt(): string {
-  return DOCUMENT_SYSTEM_PROMPT + MATH_FORMATTING_RULES;
+  return DOCUMENT_SYSTEM_PROMPT + MATH_FORMATTING_RULES + ARTIFACT_RULES;
 }

@@ -1,21 +1,10 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { extractText } from "@/lib/markdown/extract-text";
 
 interface PreProps {
   children?: ReactNode;
-}
-
-// Recursively flatten a react-markdown <pre><code>...</code></pre> tree to
-// its raw text so we can copy it.
-function extractText(node: ReactNode): string {
-  if (node == null || node === false) return "";
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(extractText).join("");
-  if (typeof node === "object" && "props" in node) {
-    return extractText((node as { props?: { children?: ReactNode } }).props?.children);
-  }
-  return "";
 }
 
 export function CodeBlock({ children }: PreProps) {

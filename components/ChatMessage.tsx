@@ -245,7 +245,7 @@ export function ChatMessage({
               )}
             </div>
           </div>
-          <Markdown content={content} className="prose-chat text-ink" />
+          <Markdown content={content} className="prose-chat text-ink" streaming={streaming} />
           {streaming && (
             <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
           )}
@@ -285,7 +285,7 @@ export function ChatMessage({
             )}
           </div>
         </div>
-        <Markdown content={content} className="prose-chat text-ink" />
+        <Markdown content={content} className="prose-chat text-ink" streaming={streaming} />
         {streaming && (
           <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
         )}
