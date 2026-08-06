@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { CodeBlock } from "./CodeBlock";
 import { SourcesPanel } from "./SourcesPanel";
 import { normalizeMathDelimiters } from "@/lib/markdown/normalize-math";
+import { estimateTokens, userTurnText } from "@/lib/tokens";
 import type { SourceEntry, Attachment } from "@/lib/db/schema";
 
 // Shallow equality on the attachments an edit produced vs. the originals, so
@@ -58,6 +59,13 @@ export function ChatMessage({
   const [draft, setDraft] = useState(content);
   const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
   const [copied, setCopied] = useState(false);
+  // Token estimate for this message: content + any inlined file/OCR text from
+  // attachments — what the model actually consumed. Memoized so streaming
+  // (content grows per chunk) only recomputes when content/attachments change.
+  const tok = useMemo(
+    () => estimateTokens(userTurnText(content, attachments)),
+    [content, attachments],
+  );
 
   async function copy() {
     try {
@@ -171,6 +179,7 @@ export function ChatMessage({
         <div className="max-w-[80%] rounded-r-[3px] rounded-l-[2px] border-l-2 border-rule bg-paper-3 px-4 py-2.5">
           <div className="mono mb-1 flex items-center justify-end gap-2 text-[10px] tracking-wide text-rule">
             <span>you</span>
+            <span className="text-ink-3">· {tok.toLocaleString()} tok</span>
             {onEdit && (
               <button
                 onClick={() => {
@@ -220,6 +229,7 @@ export function ChatMessage({
         <div className="mono mb-1.5 flex items-center gap-1.5 text-[10px] tracking-wide text-ink-3">
           <span className="h-1 w-1 rounded-full bg-rule" />
           studygpt
+          <span>· {tok.toLocaleString()} tok</span>
           <div className="ml-auto flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
             <button onClick={copy} aria-label="Copy message" className="hover:text-ink">
               {copied ? "copied" : "copy"}

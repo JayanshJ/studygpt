@@ -12,9 +12,11 @@ import {
   updateConversationTitle,
   listChunkEmbeddingsForProject,
   setMessageSources,
+  setMessageTokens,
 } from "@/lib/db";
 import { embedText, decodeEmbedding, cosine } from "@/lib/embed";
 import { isVisionModel } from "@/lib/llm/vision";
+import { estimateTokens, userTurnText } from "@/lib/tokens";
 import type { SourceEntry, Attachment } from "@/lib/db";
 
 type ChatRole = "user" | "assistant" | "system";
@@ -150,7 +152,14 @@ export async function POST(req: Request) {
     if (action === "send") {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       if (lastUser) {
-        addMessage(conversationId, "user", lastUser.content, userMessageId, lastUser.attachments);
+        addMessage(
+          conversationId,
+          "user",
+          lastUser.content,
+          userMessageId,
+          lastUser.attachments,
+          estimateTokens(userTurnText(lastUser.content, lastUser.attachments)),
+        );
         if (conv.title === "New conversation") {
           updateConversationTitle(
             conversationId,
@@ -166,9 +175,16 @@ export async function POST(req: Request) {
         // An edit can drop attachments the user removed in the edit UI. Only
         // touch attachments when the client explicitly sent editAttachments
         // (undefined = legacy callers that don't manage attachments).
+        const editedAttachments = editAttachments ?? undefined;
         if (editAttachments !== undefined) {
           updateMessageAttachments(editMessageId, editAttachments);
         }
+        // Recompute the edited message's token estimate from its new content +
+        // surviving attachments (what the model will see on resend).
+        setMessageTokens(
+          editMessageId,
+          estimateTokens(userTurnText(editContent, editedAttachments ?? null)),
+        );
         deleteMessagesAfter(conversationId, editMessageId);
       }
     }
@@ -246,11 +262,20 @@ export async function POST(req: Request) {
           : { role: m.role, content: m.content },
       ),
       abortSignal: req.signal,
-      onFinish: ({ text }) => {
+      onFinish: ({ text, usage }) => {
         if (assistantMessageId) {
+          const reply = text.replace(/\s+$/, "");
+          // Prefer the provider's real completion token count when it reports
+          // one; fall back to our estimate. (Ollama doesn't always populate
+          // usage, so the estimate keeps the per-message + global counts honest.)
+          const completionTokens = usage?.outputTokens;
+          const tokens =
+            typeof completionTokens === "number" && completionTokens > 0
+              ? completionTokens
+              : estimateTokens(reply);
           // Trim trailing whitespace so a model-emitted trailing newline
           // doesn't render as a blank line on reload.
-          upsertMessage(conversationId, "assistant", text.replace(/\s+$/, ""), assistantMessageId);
+          upsertMessage(conversationId, "assistant", reply, assistantMessageId, tokens);
         }
       },
     });

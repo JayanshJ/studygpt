@@ -81,6 +81,10 @@ export interface Message {
   role: "user" | "assistant" | "system";
   content: string;
   attachments: Attachment[] | null;
+  // Rough token estimate (see lib/tokens). Stored so the global token count in
+  // Settings is a single SUM, not a full table scan in the client. Null only
+  // for rows created before the column existed (backfilled at db open).
+  tokens: number | null;
   created_at: number;
 }
 

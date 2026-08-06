@@ -176,6 +176,7 @@ export default function Page() {
       role: "assistant",
       content: "",
       attachments: null,
+      tokens: null,
       created_at: Date.now(),
     };
     setMessages([...args.baseDisplay, assistantMsg]);
@@ -273,6 +274,7 @@ export default function Page() {
       role: "user",
       content: text,
       attachments: attachments.length ? attachments : null,
+      tokens: null,
       created_at: Date.now(),
     };
     const outgoing = [...messages, userMsg];

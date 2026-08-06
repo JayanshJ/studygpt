@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { SCHEMA_SQL, type Conversation, type Message, type ConversationMode, type Attachment } from "./schema";
+import { estimateTokens } from "@/lib/tokens";
 
 // Keep one connection across hot-reloads in dev so we don't lock the file.
 const globalForDb = globalThis as unknown as { __studygptDb?: Database.Database };
@@ -28,6 +29,35 @@ function open(): Database.Database {
   const msgCols = db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
   if (!msgCols.some((c) => c.name === "attachments")) {
     db.exec("ALTER TABLE messages ADD COLUMN attachments TEXT");
+  }
+  // Additive migration: add messages.tokens (rough token estimate) so the
+  // Settings page can show a global token count as a single SUM.
+  if (!msgCols.some((c) => c.name === "tokens")) {
+    db.exec("ALTER TABLE messages ADD COLUMN tokens INTEGER");
+  }
+  // One-time backfill: estimate tokens for rows that predate the column.
+  const tokenless = db
+    .prepare("SELECT id, content, attachments FROM messages WHERE tokens IS NULL")
+    .all() as { id: string; content: string; attachments: string | null }[];
+  if (tokenless.length > 0) {
+    const upd = db.prepare("UPDATE messages SET tokens = ? WHERE id = ?");
+    for (const r of tokenless) {
+      let extra = "";
+      if (r.attachments) {
+        try {
+          const a = JSON.parse(r.attachments);
+          if (Array.isArray(a)) {
+            for (const x of a) {
+              const t = x?.text;
+              if (typeof t === "string") extra += `\n${t}`;
+            }
+          }
+        } catch {
+          // ignore malformed attachments
+        }
+      }
+      upd.run(estimateTokens(r.content + extra), r.id);
+    }
   }
   return db;
 }
@@ -116,6 +146,7 @@ export function addMessage(
   content: string,
   id?: string,
   attachments?: Message["attachments"],
+  tokens?: number,
 ): Message {
   const row: Message = {
     id: id ?? crypto.randomUUID(),
@@ -123,6 +154,7 @@ export function addMessage(
     role,
     content,
     attachments: attachments ?? null,
+    tokens: tokens ?? null,
     created_at: Date.now(),
   };
   // INSERT OR IGNORE: a retry/regenerate passing the same ID is a no-op,
@@ -130,8 +162,8 @@ export function addMessage(
   // uses upsertMessage instead so a completing full reply overwrites a
   // partial — see upsertMessage.)
   db.prepare(
-    "INSERT OR IGNORE INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(row.id, row.conversation_id, row.role, row.content, JSON.stringify(row.attachments), row.created_at);
+    "INSERT OR IGNORE INTO messages (id, conversation_id, role, content, attachments, tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(row.id, row.conversation_id, row.role, row.content, JSON.stringify(row.attachments), row.tokens, row.created_at);
   return row;
 }
 
@@ -143,6 +175,7 @@ export function upsertMessage(
   role: Message["role"],
   content: string,
   id: string,
+  tokens?: number,
 ): Message {
   const row: Message = {
     id,
@@ -150,14 +183,29 @@ export function upsertMessage(
     role,
     content,
     attachments: null,
+    tokens: tokens ?? null,
     created_at: Date.now(),
   };
   db.prepare(
-    `INSERT INTO messages (id, conversation_id, role, content, attachments, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET content = excluded.content`,
-  ).run(row.id, row.conversation_id, row.role, row.content, JSON.stringify(row.attachments), row.created_at);
+    `INSERT INTO messages (id, conversation_id, role, content, attachments, tokens, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET content = excluded.content, tokens = excluded.tokens`,
+  ).run(row.id, row.conversation_id, row.role, row.content, JSON.stringify(row.attachments), row.tokens, row.created_at);
   return row;
+}
+
+// Recompute + store a message's token estimate (e.g. after an edit changes
+// its content or attachments). Caller supplies the estimate since it has the
+// full content+attachments context the model saw.
+export function setMessageTokens(id: string, tokens: number): void {
+  db.prepare("UPDATE messages SET tokens = ? WHERE id = ?").run(tokens, id);
+}
+
+// Total estimated tokens across ALL messages — for the Settings page's
+// global token count. Rows without a token estimate are counted as 0.
+export function getTotalTokens(): number {
+  const row = db.prepare("SELECT COALESCE(SUM(tokens), 0) AS total FROM messages").get() as { total: number | null };
+  return row.total ?? 0;
 }
 
 export function updateMessageContent(id: string, content: string): void {

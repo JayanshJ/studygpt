@@ -8,6 +8,7 @@ interface Config {
   model: string;
   baseURL: string;
   apiKey: string;
+  totalTokens: number;
 }
 
 export default function SettingsPage() {
@@ -64,6 +65,18 @@ export default function SettingsPage() {
           conversations. The provider layer is swappable — today only Ollama is
           wired, but adding Claude or GPT later is one file plus a switch here.
         </p>
+
+        <div className="mt-7 flex items-baseline gap-3 border-y border-line py-3">
+          <span className="mono text-[11px] tracking-[0.18em] text-ink-3">
+            TOTAL TOKENS
+          </span>
+          <span className="mono text-[15px] text-ink">
+            {config.totalTokens.toLocaleString()}
+          </span>
+          <span className="mono text-[11px] text-ink-3">
+            · across all conversations
+          </span>
+        </div>
 
         <form onSubmit={save} className="mt-9 flex flex-col gap-7">
           <Field label="Provider" hint="More providers arrive in later phases.">

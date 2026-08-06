@@ -1,4 +1,5 @@
 import { addMessage } from "@/lib/db";
+import { estimateTokens } from "@/lib/tokens";
 
 interface Body {
   conversationId?: string;
@@ -29,6 +30,9 @@ export async function PATCH(req: Request) {
   ) {
     return new Response("Missing or invalid conversationId, messageId, role, or content", { status: 400 });
   }
-  addMessage(conversationId, role, content, messageId);
+  // Store a token estimate so even a stopped partial counts toward the
+  // global token total. If onFinish later writes the full reply, its INSERT
+  // OR IGNORE is a no-op and the full reply's tokens win via upsertMessage.
+  addMessage(conversationId, role, content, messageId, undefined, estimateTokens(content));
   return new Response("OK", { status: 200 });
 }
