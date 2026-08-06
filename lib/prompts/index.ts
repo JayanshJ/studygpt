@@ -10,6 +10,7 @@ export { CHAT_SYSTEM_PROMPT, FEYNMAN_SYSTEM_PROMPT };
 // reminder.
 export const MATH_FORMATTING_RULES = `
 Formatting constraints for mathematical output (MUST follow):
+- Delimiters: ALWAYS use $...$ for inline math and $$...$$ for display math. NEVER use \\(...\\) or \\[...\\] delimiters — they do NOT render in this interface and will appear as raw text. Every math expression must be wrapped in $ or $$.
 - Structural spacing: never produce a wall of text. Break problems into labeled sub-sections using bold headings (e.g., **(i)**, **(ii)**). Insert a blank line between every logical step or sentence.
 - Strict display math: for ANY equation that includes fractions (\\frac), limits (\\lim), summations, integrals, or exceeds a few basic terms, use display math ($$ ... $$). A display equation must sit on its OWN line with a blank line above and below it.
 - Limited inline math: use inline math ($ ... $) ONLY for single variables (e.g., $x$), simple coordinates, or flat expressions (e.g., $x > 0$). NEVER put fractions, limits, summations, or multi-term expressions inside single $ delimiters.

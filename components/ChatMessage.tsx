@@ -6,6 +6,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { CodeBlock } from "./CodeBlock";
 import { SourcesPanel } from "./SourcesPanel";
+import { normalizeMathDelimiters } from "@/lib/markdown/normalize-math";
 import type { SourceEntry, Attachment } from "@/lib/db/schema";
 
 // Shallow equality on the attachments an edit produced vs. the originals, so
@@ -236,7 +237,7 @@ export function ChatMessage({
             rehypePlugins={[rehypeKatex]}
             components={{ pre: CodeBlock }}
           >
-            {content || ""}
+            {normalizeMathDelimiters(content || "")}
           </ReactMarkdown>
           {streaming && (
             <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
