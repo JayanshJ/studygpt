@@ -209,17 +209,51 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4a4b49; }
 
 /* Print / Save-as-PDF — for the /print/[id] document page. Strip the app
    chrome (anything tagged .no-print: back link, print button, code copy
-   buttons), give a clean white page with sensible margins, and keep
-   headings/code/tables/math from splitting across a page break. */
-@page { margin: 2cm; }
+   buttons), give a clean A4 page with sensible margins and page numbers, and
+   keep headings/code/tables/math from splitting across a page break. Tuned
+   font sizes so a printed document reads like a finished reference, not a
+   chat bubble; tables and code wrap to the page width instead of overflowing. */
+@page {
+  size: A4;
+  margin: 1.6cm 1.8cm 1.8cm 1.8cm;
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-family: ui-monospace, monospace;
+    font-size: 9pt;
+    color: #8b8d83;
+  }
+}
 
 @media print {
   .no-print { display: none !important; }
   html, body { background: #ffffff !important; }
   .print-sheet { max-width: none; margin: 0; padding: 0; background: #ffffff !important; }
+
   .prose-chat { font-size: 11pt; line-height: 1.5; color: #1f2020; }
-  .prose-chat h1, .prose-chat h2, .prose-chat h3 { break-after: avoid; }
+  .prose-chat p { orphans: 2; widows: 2; }
+
+  /* Document title — large, with a solid rule so page 1 reads as a document. */
+  .prose-chat h1 {
+    font-size: 22pt; line-height: 1.2; margin: 0 0 0.6em;
+    border-bottom: 1.5px solid #1f2020; padding-bottom: 0.3em;
+    break-after: avoid;
+  }
+  .prose-chat h2 { font-size: 15pt; margin-top: 1.3em; break-after: avoid; }
+  .prose-chat h3 { font-size: 12.5pt; break-after: avoid; }
+  .prose-chat h4 { break-after: avoid; }
+
   .prose-chat pre, .prose-chat table, .prose-chat blockquote, .prose-chat .katex-display { break-inside: avoid; }
-  .prose-chat pre { white-space: pre-wrap; word-break: break-word; }
+  .prose-chat pre { white-space: pre-wrap; word-break: break-word; font-size: 9.5pt; line-height: 1.4; }
+  .prose-chat code { font-size: 9.5pt; }
+
+  /* Tables span the page and wrap cell text; keep the header shading so rows
+     stay readable (browsers drop backgrounds unless we force exact). */
+  .prose-chat table { width: 100%; font-size: 10pt; }
+  .prose-chat th, .prose-chat td { word-break: break-word; }
+  .prose-chat th {
+    background: #eae8dc !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .prose-chat img { max-width: 100%; }
   .prose-chat a { color: #1f2020; text-decoration: underline; }
 }

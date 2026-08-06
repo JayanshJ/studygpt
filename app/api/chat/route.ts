@@ -261,6 +261,11 @@ export async function POST(req: Request) {
       // conversation's mode prompt. Retrieval contextBlock is appended either
       // way so project-grounded documents still cite their sources.
       system: (document ? documentSystemPrompt() : systemPromptFor(conv.mode)) + contextBlock,
+      // Give authored documents a large output budget so a requested multi-page
+      // document isn't cut off at the provider's default (small) cap — the
+      // leading cause of a "4-page cheat sheet" rendering as 1 page. Normal
+      // chat gets a comfortable cap; documents get a generous one.
+      maxOutputTokens: document ? 8192 : 4096,
       messages: messages.map((m, i) =>
         m.role === "user"
           ? {
