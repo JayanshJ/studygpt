@@ -121,6 +121,11 @@ export function StudySession({
 
       {error && <div className="mono mb-3 text-[11px] text-rule">{error}</div>}
 
+      {/* Cross-deck card badge: shown only in cross-deck mode (no per-deck label). */}
+      {!deckLabel && current.deckTitle && (
+        <div className="mono mb-2 text-[10px] tracking-wide text-ink-3">{current.deckTitle}</div>
+      )}
+
       {/* Card */}
       <button
         onClick={() => setFlipped((f) => !f)}

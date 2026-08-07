@@ -109,7 +109,7 @@ export default function DeckOverviewPage() {
                   disabled={overview.cards.length === 0}
                   className="mono rounded-[3px] border border-line bg-paper px-4 py-2 text-[13px] tracking-wide text-ink transition-colors hover:bg-paper-3 disabled:opacity-40"
                 >
-                  {overview.due + Math.max(0, overview.dailyCap - overview.newIntroducedToday) > 0 ? "Start review" : "nothing due"}
+                  {overview.due + Math.min(overview.new, Math.max(0, overview.dailyCap - overview.newIntroducedToday)) > 0 ? "Start review" : "nothing due"}
                 </button>
               )
             ) : (
