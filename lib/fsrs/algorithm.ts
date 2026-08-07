@@ -82,7 +82,7 @@ function elapsedDays(last: number, now: number): number {
 // `last` with stability `s` (days). FSRS-5 power forgetting curve. Matches
 // ts-fsrs's forgetting_curve (rounded to 8 dp, no [0,1] clamp — the curve is
 // always in (0,1] for non-negative elapsed days).
-function retrievability(s: number, last: number | null, now: number): number {
+export function retrievability(s: number, last: number | null, now: number): number {
   if (last == null || s <= 0) return 0;
   const el = elapsedDays(last, now);
   return round8(Math.pow(1 + (FACTOR * el) / s, DECAY));
