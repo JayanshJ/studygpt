@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCard, getCardScheduling, upsertCardScheduling, appendReviewLog } from "@/lib/db";
 import { repeat, Rating, CardState, type SchedCard } from "@/lib/fsrs/algorithm";
+import { linkCardToConcepts } from "@/lib/mastery/link";
 
 // POST /api/review/grade — grade a card, update its FSRS schedule, append a
 // review_log row. Body: { cardId, grade }. Deck-agnostic (used by both the
@@ -41,5 +42,8 @@ export async function POST(req: Request) {
     difficulty: log.difficulty,
     reviewedAt: now,
   });
+  // SP4: best-effort card ↔ concept auto-link. Fire-and-forget so grading
+  // stays snappy; failures are swallowed inside linkCardToConcepts.
+  void linkCardToConcepts(cardId).catch(() => {});
   return NextResponse.json({ state: next.state, nextDue: next.due, reps: next.reps, lapses: next.lapses });
 }
