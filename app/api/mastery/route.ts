@@ -22,7 +22,6 @@ export async function GET(req: Request) {
 
   const now = Date.now();
   const masteryMap = conceptMasteryForProject(projectId, now);
-  const labelsById = new Map(listConceptsForProject(projectId).map((c) => [c.id, c.label]));
 
   const rows = listConceptsForProject(projectId).map((c) => {
     const m = masteryMap.get(c.id);
