@@ -11,14 +11,13 @@ import {
   deleteMessage,
   deleteMessagesAfter,
   updateConversationTitle,
-  listChunkEmbeddingsForProject,
   setMessageSources,
   setMessageTokens,
 } from "@/lib/db";
-import { embedText, decodeEmbedding, cosine } from "@/lib/embed";
 import { isVisionModel } from "@/lib/llm/vision";
 import { estimateTokens, userTurnText } from "@/lib/tokens";
 import type { SourceEntry, Attachment } from "@/lib/db";
+import { retrieve } from "@/lib/retrieval";
 
 type ChatRole = "user" | "assistant" | "system";
 type Action = "send" | "regenerate" | "edit";
@@ -217,283 +216,19 @@ export async function POST(req: Request) {
     const lastUserContent = lastUser?.content ?? "";
     const complex = isComplexTurn(lastUserContent, document);
 
-    // --- Retrieval (two-stage RAG, only for project conversations) ---
-    // Stage 1: material routing — embed the (cleaned) query, score every
-    // chunk by cosine similarity, drop chunks below the floor, then rank
-    // materials by their best chunk score and select the top 4.
-    // Stage 2: excerpt selection — within the selected materials, greedily
-    // take the top-scoring chunks with neighbor (ordinal ±1) expansion, dedup
-    // by leading text, and accumulate up to a ~6000-char budget. The context
-    // block lists ALL project materials (so the model is aware of everything)
-    // followed by the selected excerpts. Sources are persisted before
-    // streaming so they survive a mid-stream stop. Retrieval failure is
-    // non-fatal: fall back to an ungrounded answer.
+    // --- Retrieval (two-stage RAG) — extracted to lib/retrieval (SP4) ---
     let contextBlock = "";
     let sources: SourceEntry[] = [];
-    if (conv.project_id) {
-      const chunks = listChunkEmbeddingsForProject(conv.project_id);
-      if (chunks.length > 0 && lastUser) {
-        try {
-          // Clean the query: strip leading `>` quote lines and markdown fences,
-          // collapse whitespace, truncate to ~600 chars.
-          const strippedFences = lastUserContent.replace(/```[\s\S]*?```/g, " ");
-          const withoutQuotes = strippedFences
-            .split("\n")
-            .filter((ln) => !/^\s*>/.test(ln))
-            .join("\n");
-          const cleaned = withoutQuotes.replace(/\s+/g, " ").trim().slice(0, 600);
-          const cleanQuery = cleaned || lastUserContent.slice(0, 600);
-
-          // --- Explicit material reference detection ----------------------
-          // A request like "make flashcards from Übungsblatt 6" is a *meta*
-          // request: it names a material but isn't semantically similar to that
-          // material's content. Pure cosine retrieval scores those chunks low,
-          // drops them under the 0.22 floor, and selects whichever materials
-          // have incidental similarity (e.g. sheets 1/7/9) instead. Detect when
-          // the user names a material — by full title, or by "<word> <number>"
-          // (e.g. "übungsblatt 6", "kapitel 6") — and force that material's
-          // chunks in regardless of cosine. The word match is fuzzy so a mangled
-          // spoken/typed word ("un-bungblatt") still matches "uebungsblatt".
-          const normRef = (s: string) =>
-            s
-              .toLowerCase()
-              .normalize("NFKD")
-              .replace(/[̀-ͯ]/g, "")
-              .replace(/\.(pdf|txt|md|markdown|csv|tsv|json|docx?)$/i, "")
-              .replace(/[^a-z0-9]+/g, " ")
-              .trim();
-          const refTokens = (s: string) => {
-            const t = normRef(s);
-            return t ? t.split(" ").filter(Boolean) : [];
-          };
-          const isAlphaTok = (t: string) => /[a-z]/.test(t) && t.length >= 4;
-          // Fuzzy word match tolerant of transcription/typo mangling, e.g.
-          // "bungblatt" matches "uebungsblatt": contiguous substring either way,
-          // OR subsequence (only for ≥5 chars so short words don't over-match).
-          const fuzzyWord = (a: string, b: string) => {
-            if (!a || !b) return false;
-            if (a.includes(b) || b.includes(a)) return true;
-            if (a.length < 5 || b.length < 5) return false;
-            const [hay, needle] = a.length >= b.length ? [a, b] : [b, a];
-            let i = 0;
-            for (const ch of hay) {
-              if (ch === needle[i]) {
-                i++;
-                if (i === needle.length) return true;
-              }
-            }
-            return false;
-          };
-
-          const materialTitles = new Map<string, string>();
-          for (const c of chunks) {
-            if (!materialTitles.has(c.materialId)) materialTitles.set(c.materialId, c.materialTitle);
-          }
-
-          const detectRefs = (text: string): Set<string> => {
-            const ids = new Set<string>();
-            const qToks = refTokens(text);
-            const qNorm = normRef(text);
-            for (const [mid, title] of materialTitles) {
-              const tToks = refTokens(title);
-              const tNums = tToks.filter((t) => /^\d+$/.test(t));
-              const tAlpha = tToks.filter(isAlphaTok);
-              const tNorm = normRef(title);
-              // (1) full normalized title appears in the query (clean mention)
-              if (tNorm && tNorm.length >= 3 && qNorm.includes(tNorm)) {
-                ids.add(mid);
-                continue;
-              }
-              // (2) "<word> <number>": a query number matches a title number,
-              // with an alpha qualifier right before it fuzzy-matching the
-              // title's alpha token. Disambiguates "übungsblatt 6" →
-              // 6._Uebungsblatt vs Kapitel_6, and ignores count words like
-              // "make 10 flashcards" (no title word before the number).
-              for (let qi = 0; qi < qToks.length; qi++) {
-                if (!/^\d+$/.test(qToks[qi])) continue;
-                if (!tNums.includes(qToks[qi])) continue;
-                let qualifier = "";
-                for (let j = qi - 1; j >= Math.max(0, qi - 3); j--) {
-                  if (isAlphaTok(qToks[j])) {
-                    qualifier = qToks[j];
-                    break;
-                  }
-                }
-                if (!qualifier) continue; // bare number → too ambiguous (could be a count)
-                if (tAlpha.some((a) => fuzzyWord(a, qualifier))) {
-                  ids.add(mid);
-                  break;
-                }
-              }
-            }
-            return ids;
-          };
-
-          let explicitIds = detectRefs(lastUserContent);
-          // A bare follow-up like "again" / "make them again" carries no
-          // material name; pull the reference from the prior user turn so the
-          // redo keeps the same material instead of falling back to semantic.
-          if (explicitIds.size === 0 && lastUserContent.trim().split(/\s+/).length <= 10) {
-            const prevUser = [...messages]
-              .reverse()
-              .filter((m) => m.role === "user")
-              .slice(1, 3)
-              .map((m) => m.content)
-              .join(" ");
-            if (prevUser) explicitIds = detectRefs(prevUser);
-          }
-
-          // --- Semantic scoring (for non-explicit selection) ------------
-          const qVec = await embedText(cleanQuery);
-          const q = Float32Array.from(qVec);
-          const scored = chunks.map((c) => ({
-            c,
-            sim: cosine(q, decodeEmbedding(c.embedding)),
-          }));
-          // Drop chunks below the similarity floor.
-          const eligible = scored.filter((s) => s.sim >= 0.22);
-
-          // Material routing: per-material max chunk score → rank → top 4
-          // (or all if fewer). Only chunks from selected materials are eligible
-          // for excerpt selection, but the inventory below lists every material.
-          const perMaterial = new Map<string, { title: string; max: number }>();
-          for (const s of eligible) {
-            const cur = perMaterial.get(s.c.materialId);
-            if (!cur || s.sim > cur.max) {
-              perMaterial.set(s.c.materialId, { title: s.c.materialTitle, max: s.sim });
-            }
-          }
-          const rankedMaterials = [...perMaterial.entries()]
-            .sort((a, b) => b[1].max - a[1].max)
-            .slice(0, 4)
-            .map(([id]) => id);
-          // Selected = top-4 semantic ∪ explicitly referenced materials.
-          const selectedMatSet = new Set(rankedMaterials);
-          for (const id of explicitIds) selectedMatSet.add(id);
-
-          // Index every chunk in selected materials by `${materialId}:${ordinal}`
-          // so neighbor expansion can look up ordinal ±1 regardless of score.
-          const chunkIndex = new Map<string, (typeof chunks)[number]>();
-          for (const c of chunks) {
-            if (selectedMatSet.has(c.materialId)) {
-              chunkIndex.set(`${c.materialId}:${c.ordinal}`, c);
-            }
-          }
-
-          const eligibleSelected = eligible
-            .filter((s) => selectedMatSet.has(s.c.materialId))
-            .sort((a, b) => b.sim - a.sim);
-
-          // Inventory of ALL project materials (title + chunk count).
-          const inventoryMap = new Map<string, { title: string; count: number }>();
-          for (const c of chunks) {
-            const cur = inventoryMap.get(c.materialId);
-            if (cur) cur.count += 1;
-            else inventoryMap.set(c.materialId, { title: c.materialTitle, count: 1 });
-          }
-          const inventory = [...inventoryMap.values()];
-
-          // Greedily take top chunks with neighbor expansion (ordinal ±1),
-          // dedup by first-80 chars, accumulate until ~6000-char budget.
-          const BUDGET = 6000;
-          const seenText = new Set<string>();
-          const pickedOrdinals = new Set<string>();
-          const picked: Array<{ c: (typeof chunks)[number]; sim: number }> = [];
-          let totalChars = 0;
-
-          const tryAdd = (chunk: (typeof chunks)[number]): boolean => {
-            const textKey = chunk.text.slice(0, 80);
-            const ordKey = `${chunk.materialId}:${chunk.ordinal}`;
-            if (seenText.has(textKey) || pickedOrdinals.has(ordKey)) return false;
-            if (totalChars + chunk.text.length > BUDGET && picked.length > 0) return false;
-            seenText.add(textKey);
-            pickedOrdinals.add(ordKey);
-            picked.push({ c: chunk, sim: 0 });
-            totalChars += chunk.text.length;
-            return true;
-          };
-
-          // (A) Explicitly referenced materials FIRST: take their chunks in
-          // natural document order (ordinal) up to a per-material slice of the
-          // budget, bypassing the cosine floor — the user asked for THIS
-          // material, so its content is relevant by reference, not similarity.
-          if (explicitIds.size > 0) {
-            const explicitSlice = Math.max(2500, Math.floor(BUDGET / explicitIds.size));
-            for (const mid of explicitIds) {
-              const ordered = chunks
-                .filter((c) => c.materialId === mid)
-                .sort((a, b) => a.ordinal - b.ordinal);
-              let used = 0;
-              for (const c of ordered) {
-                if (used >= explicitSlice) break;
-                if (tryAdd(c)) used += c.text.length;
-              }
-            }
-          }
-
-          // (B) Fill the remaining budget with the top semantic chunks from
-          // the other selected materials, with neighbor expansion.
-          for (const s of eligibleSelected) {
-            if (totalChars >= BUDGET) break;
-            if (explicitIds.has(s.c.materialId)) continue; // already seeded above
-            tryAdd(s.c);
-            for (const d of [-1, 1]) {
-              const neighbor = chunkIndex.get(`${s.c.materialId}:${s.c.ordinal + d}`);
-              if (neighbor) tryAdd(neighbor);
-            }
-          }
-
-          sources = picked.map((s) => ({
-            materialId: s.c.materialId,
-            title: s.c.materialTitle,
-            snippet: s.c.text.slice(0, 240),
-            ordinal: s.c.ordinal,
-          }));
-
-          const inventoryLines = inventory
-            .map((m, i) => `${i + 1}. ${m.title} (${m.count} chunk${m.count === 1 ? "" : "s"})`)
-            .join("\n");
-
-          // Group selected excerpts by material for the context block.
-          const byMaterial = new Map<string, { title: string; texts: string[] }>();
-          for (const s of picked) {
-            let g = byMaterial.get(s.c.materialId);
-            if (!g) {
-              g = { title: s.c.materialTitle, texts: [] };
-              byMaterial.set(s.c.materialId, g);
-            }
-            g.texts.push(s.c.text);
-          }
-
-          const excerpts = [...byMaterial.values()]
-            .map((g) => `<excerpt material="${g.title}">\n${g.texts.join("\n\n")}\n</excerpt>`)
-            .join("\n---\n");
-
-          const explicitNote =
-            explicitIds.size > 0
-              ? `The user explicitly referenced: ${[...explicitIds]
-                  .map((id) => materialTitles.get(id) ?? "")
-                  .filter(Boolean)
-                  .join(", ")}. Focus on those materials' excerpts and cite them by title. `
-              : "";
-
-          contextBlock =
-            `\n\n<context>\n` +
-            `You are working within a study project with the following reference materials:\n` +
-            `${inventoryLines}\n` +
-            `${explicitNote}` +
-            `The excerpts below are the most relevant passages retrieved for this question. ` +
-            `Use them to ground your answer and cite a source by its title in square brackets when you rely on it. ` +
-            `If the user names a specific material, focus your answer on that material. ` +
-            `If the answer is not in the excerpts, say so, then either answer from general knowledge and say so, ` +
-            `or use the web_search tool if web search is enabled.\n\n` +
-            `${excerpts}\n</context>`;
-
-          if (assistantMessageId) setMessageSources(assistantMessageId, sources);
-        } catch {
-          // Retrieval failure is non-fatal — fall back to an ungrounded answer.
-        }
-      }
+    const retrieved = await retrieve({
+      projectId: conv.project_id ?? "",
+      lastUser,
+      lastUserContent,
+      messages,
+    });
+    if (retrieved) {
+      contextBlock = retrieved.contextBlock;
+      sources = retrieved.sources;
+      if (assistantMessageId) setMessageSources(assistantMessageId, sources);
     }
 
     // Precompute which user turns still carry attachments when sent to the
