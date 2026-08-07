@@ -3,12 +3,15 @@
 // assignment, so the overview is stable across reloads as long as the graph
 // data is unchanged. Pure, no React, no DB.
 
+import type { Band } from "@/lib/mastery/model";
+
 export interface GraphConcept {
   id: string;
   label: string;
   slug: string;
   description: string | null;
   sourceCount: number;
+  band?: Band;
 }
 
 export interface GraphEdge {

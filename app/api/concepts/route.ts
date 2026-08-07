@@ -6,10 +6,12 @@ import {
   listEdgesForProject,
   listExtractionsForProject,
 } from "@/lib/db";
+import { conceptMasteryForProject } from "@/lib/db/mastery";
 
 // GET /api/concepts?projectId= — the concept graph read shape consumed by the
 // (SP2) graph page and the /projects status chips. Returns concepts, edges,
-// and per-material extraction status. No mastery fields (those arrive in SP4).
+// and per-material extraction status. Mastery fields (mastery, band) arrive
+// in SP4.
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
@@ -20,13 +22,20 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const concepts = listConceptsForProject(projectId).map((c) => ({
-    id: c.id,
-    label: c.label,
-    slug: c.slug,
-    description: c.description,
-    sourceCount: c.source_count,
-  }));
+  const now = Date.now();
+  const masteryMap = conceptMasteryForProject(projectId, now);
+  const concepts = listConceptsForProject(projectId).map((c) => {
+    const m = masteryMap.get(c.id);
+    return {
+      id: c.id,
+      label: c.label,
+      slug: c.slug,
+      description: c.description,
+      sourceCount: c.source_count,
+      mastery: m?.mastery ?? null,
+      band: m?.band ?? "unknown",
+    };
+  });
   const edges = listEdgesForProject(projectId).map((e) => ({
     source: e.source_concept,
     target: e.target_concept,

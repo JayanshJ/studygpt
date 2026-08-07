@@ -17,6 +17,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { layoutNodes, type LayoutNode, type LayoutLink } from "@/lib/graph/layout";
 import type { GraphConcept, GraphEdge, Cluster } from "@/lib/graph/clusters";
+import type { Band } from "@/lib/mastery/model";
 
 // --- visual encoding constants (monochrome Graph Paper tokens) ---
 const CANVAS_W = 900;
@@ -40,11 +41,21 @@ type ConceptNodeData = {
   label: string;
   degree: number;
   sourceCount: number;
+  band: Band;
   selected: boolean;
   hovered: boolean;
   dimmed: boolean;
 };
 type ConceptRFNode = Node<ConceptNodeData, "concept">;
+
+function bandBorder(band: Band): string {
+  switch (band) {
+    case "slipping": return "border-rule";
+    case "strong": return "border-feynman";
+    case "learning": return "border-ink";
+    default: return "border-ink-3"; // untested + unknown
+  }
+}
 
 function ConceptNode({ data }: NodeProps<ConceptRFNode>) {
   const filled = data.sourceCount >= 2;
@@ -54,14 +65,18 @@ function ConceptNode({ data }: NodeProps<ConceptRFNode>) {
   const box = filled
     ? "bg-ink text-paper border-2"
     : "bg-paper text-ink-3 border-2";
-  const border = (data.selected || data.hovered) ? "border-rule" : filled ? "border-ink" : "border-ink-3";
+  const bandBorderClass = bandBorder(data.band);
+  const border = (data.selected || data.hovered)
+    ? "border-rule border-[3px]"
+    : bandBorderClass;
+  const dim = data.band === "unknown" ? "opacity-40" : "";
   // size via inline style so it scales with degree
   const r = conceptRadius(data.degree);
   return (
     <div className={base} style={{ width: r * 2, height: r * 2 }}>
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
-      <div className={`${box} ${border} mono rounded-full px-2 py-1 text-[10px] leading-tight`} style={{ maxWidth: r * 2.4 }}>
+      <div className={`${box} ${border} ${dim} mono rounded-full px-2 py-1 text-[10px] leading-tight`} style={{ maxWidth: r * 2.4 }}>
         {data.label}
       </div>
     </div>
@@ -118,31 +133,33 @@ export function ConceptGraph({
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
   // Active node ids + per-node degree (undirected) for the current view.
-  const { nodeIds, degreeById, labelById, sourceCountById } = useMemo(() => {
+  const { nodeIds, degreeById, labelById, sourceCountById, bandById } = useMemo(() => {
     if (kind === "overview") {
       const ids = clusters.map((c) => c.id);
       const deg = new Map<string, number>();
       const lbl = new Map<string, string>(clusters.map((c) => [c.id, c.name]));
       const sc = new Map<string, number>();
+      const band = new Map<string, Band>();
       // inter-cluster edge weight = degree between clusters
       for (const e of edges) {
         // edges here are inter-cluster; count per cluster node
         deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
         deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
       }
-      return { nodeIds: ids, degreeById: deg, labelById: lbl, sourceCountById: sc };
+      return { nodeIds: ids, degreeById: deg, labelById: lbl, sourceCountById: sc, bandById: band };
     }
     const ids = concepts.map((c) => c.id);
     const deg = new Map<string, number>(ids.map((id) => [id, 0]));
     const lbl = new Map<string, string>(concepts.map((c) => [c.id, c.label]));
     const sc = new Map<string, number>(concepts.map((c) => [c.id, c.sourceCount]));
+    const band = new Map<string, Band>(concepts.map((c) => [c.id, c.band ?? "unknown"]));
     for (const e of edges) {
       if (e.source === e.target) continue;
       if (!deg.has(e.source) || !deg.has(e.target)) continue;
       deg.set(e.source, deg.get(e.source)! + 1);
       deg.set(e.target, deg.get(e.target)! + 1);
     }
-    return { nodeIds: ids, degreeById: deg, labelById: lbl, sourceCountById: sc };
+    return { nodeIds: ids, degreeById: deg, labelById: lbl, sourceCountById: sc, bandById: band };
   }, [kind, clusters, concepts, edges]);
 
   // Layout positions for the active nodes.
@@ -200,6 +217,7 @@ export function ConceptGraph({
           label: labelById.get(id) ?? id,
           degree: degreeById.get(id) ?? 0,
           sourceCount: sourceCountById.get(id) ?? 0,
+          band: bandById.get(id) ?? "unknown",
           selected,
           hovered,
           dimmed,
@@ -250,7 +268,7 @@ export function ConceptGraph({
       });
 
     return { rfNodes, rfEdges };
-  }, [nodeIds, positions, kind, clusters, labelById, degreeById, sourceCountById, edges, selectedId, focusId, focusNeighbors, hoveredId, hoveredEdgeId]);
+  }, [nodeIds, positions, kind, clusters, labelById, degreeById, sourceCountById, bandById, edges, selectedId, focusId, focusNeighbors, hoveredId, hoveredEdgeId]);
 
   const onNodeMouseEnter = useCallback<NodeMouseHandler>((_, node) => setHoveredId(node.id), []);
   const onNodeMouseLeave = useCallback<NodeMouseHandler>(() => setHoveredId(null), []);
