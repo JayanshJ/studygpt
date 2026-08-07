@@ -3,8 +3,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { Markdown } from "@/components/Markdown";
 import type { CardDue } from "@/lib/db/reviews";
+import type { Band } from "@/lib/mastery/model";
 
 type Grade = 1 | 2 | 3 | 4;
+
+// Band → Graph Paper border token for the flip-card. Slipping cards get the
+// rule (red) accent, strong cards the feynman (green) accent, learning cards
+// the ink accent, and untested/unknown/undefined fall back to the line border.
+function bandBorder(band?: Band): string {
+  switch (band) {
+    case "slipping":
+      return "border-rule";
+    case "strong":
+      return "border-feynman";
+    case "learning":
+      return "border-ink";
+    default:
+      return "border-line"; // untested + unknown
+  }
+}
 
 const GRADE_BUTTONS: { grade: Grade; label: string; cls: string }[] = [
   { grade: 1, label: "Again", cls: "border-rule text-rule" },
@@ -109,6 +126,8 @@ export function StudySession({
 
   if (!current) return null;
 
+  const bandClass = bandBorder(current.band);
+
   return (
     <div>
       <div className="mono mb-4 flex items-center justify-between text-[12px] tracking-wide tabular-nums text-ink-3">
@@ -129,10 +148,10 @@ export function StudySession({
       {/* Card */}
       <button
         onClick={() => setFlipped((f) => !f)}
-        className="block w-full rounded-[3px] border border-line bg-paper p-6 text-left transition-colors hover:border-ink-3"
+        className={`block w-full rounded-[3px] border bg-paper p-6 text-left transition-colors hover:border-ink-3 ${bandClass}`}
       >
         <div className="mono mb-3 text-[10px] tracking-wide text-ink-3">
-          {flipped ? "back" : "front"} · click to flip
+          {flipped ? "back" : "front"} · click to flip{current.band ? ` · ${current.band}` : ""}
         </div>
         <div className="text-[1rem] leading-relaxed text-ink">
           <Markdown content={flipped ? current.back : current.front} />
