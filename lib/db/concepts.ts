@@ -230,3 +230,65 @@ export function setEdgeCountsForProject(projectId: string, total: number): void 
     "UPDATE material_extractions SET edge_count = ? WHERE project_id = ? AND status = 'ready'",
   ).run(total, projectId);
 }
+
+export interface ConceptDetail {
+  concept: { id: string; label: string; slug: string; description: string | null; sourceCount: number };
+  sources: { materialId: string; title: string; ordinal: number; snippet: string | null }[];
+  neighbors: {
+    id: string;
+    label: string;
+    relation: string;
+    confidence: string;
+    score: number | null;
+    direction: "out" | "in";
+  }[];
+}
+
+// One concept + its provenance (which material/chunk it came from) + its
+// neighbors (edges both directions, with the other concept's label). Serves the
+// /graph detail panel. Returns undefined when the concept id doesn't exist.
+export function getConceptDetail(id: string): ConceptDetail | undefined {
+  const concept = db
+    .prepare("SELECT id, label, slug, description, source_count FROM concepts WHERE id = ?")
+    .get(id) as
+    | { id: string; label: string; slug: string; description: string | null; source_count: number }
+    | undefined;
+  if (!concept) return undefined;
+
+  const sources = db
+    .prepare(
+      `SELECT cs.material_id AS materialId, m.title, cs.ordinal, cs.snippet
+       FROM concept_sources cs
+       JOIN materials m ON m.id = cs.material_id
+       WHERE cs.concept_id = ?
+       ORDER BY m.title ASC, cs.ordinal ASC`,
+    )
+    .all(id) as { materialId: string; title: string; ordinal: number; snippet: string | null }[];
+
+  const outEdges = db
+    .prepare(
+      `SELECT e.target_concept AS id, c.label, e.relation, e.confidence, e.confidence_score AS score, 'out' AS direction
+       FROM concept_edges e JOIN concepts c ON c.id = e.target_concept
+       WHERE e.source_concept = ?`,
+    )
+    .all(id) as { id: string; label: string; relation: string; confidence: string; score: number | null; direction: "out" }[];
+  const inEdges = db
+    .prepare(
+      `SELECT e.source_concept AS id, c.label, e.relation, e.confidence, e.confidence_score AS score, 'in' AS direction
+       FROM concept_edges e JOIN concepts c ON c.id = e.source_concept
+       WHERE e.target_concept = ?`,
+    )
+    .all(id) as { id: string; label: string; relation: string; confidence: string; score: number | null; direction: "in" }[];
+
+  return {
+    concept: {
+      id: concept.id,
+      label: concept.label,
+      slug: concept.slug,
+      description: concept.description,
+      sourceCount: concept.source_count,
+    },
+    sources,
+    neighbors: [...outEdges, ...inEdges],
+  };
+}
