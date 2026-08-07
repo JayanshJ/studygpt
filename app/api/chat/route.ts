@@ -13,11 +13,14 @@ import {
   updateConversationTitle,
   setMessageSources,
   setMessageTokens,
+  listConceptsForProject,
 } from "@/lib/db";
 import { isVisionModel } from "@/lib/llm/vision";
 import { estimateTokens, userTurnText } from "@/lib/tokens";
 import type { SourceEntry, Attachment } from "@/lib/db";
 import { retrieve } from "@/lib/retrieval";
+import { conceptMasteryForProject } from "@/lib/db/mastery";
+import { buildMasteryBlock } from "@/lib/mastery/model";
 
 type ChatRole = "user" | "assistant" | "system";
 type Action = "send" | "regenerate" | "edit";
@@ -231,6 +234,22 @@ export async function POST(req: Request) {
       if (assistantMessageId) setMessageSources(assistantMessageId, sources);
     }
 
+    // SP4: mastery summary in the system prompt (only when the project has
+    // concepts with mastery data).
+    let masteryBlock = "";
+    if (conv.project_id) {
+      const masteryMap = conceptMasteryForProject(conv.project_id, Date.now());
+      if (masteryMap.size > 0) {
+        const labelsById = new Map(listConceptsForProject(conv.project_id).map((c) => [c.id, c.label]));
+        const entries = [...masteryMap.entries()].map(([id, m]) => ({
+          label: labelsById.get(id) ?? id,
+          mastery: m.mastery,
+          band: m.band,
+        }));
+        masteryBlock = buildMasteryBlock(entries);
+      }
+    }
+
     // Precompute which user turns still carry attachments when sent to the
     // model: the latest user turn keeps everything; the last RECENT_IMAGE_TURNS
     // user turns keep their images; everything older is stripped to plain
@@ -259,7 +278,7 @@ export async function POST(req: Request) {
       web && !useWeb
         ? "\n\nNote: the user enabled web search for this turn, but no search provider key is configured, so the web_search tool is NOT available. If you cannot answer a current or factual question from your own knowledge, say briefly that web search isn't set up yet and they can add a Tavily API key in Settings to enable it. Do not pretend to search."
         : "";
-    const system = `Current date: ${today}.\n` + basePrompt + webNote + contextBlock;
+    const system = `Current date: ${today}.\n` + basePrompt + (masteryBlock ? "\n\n" + masteryBlock : "") + webNote + contextBlock;
 
     const result = streamText({
       model,
