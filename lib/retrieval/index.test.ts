@@ -44,3 +44,45 @@ test("scoreChunks with no eligible chunks returns []", () => {
   const q = vec(1, 0);
   assert.equal(scoreChunks(q, []).length, 0);
 });
+
+test("scoreChunks: slipping-concept chunk boosted over equal-sim no-concept chunk", () => {
+  const q = vec(1, 0);
+  const chunks = [
+    chunk("m1", 0, "A", [0.8, 0.6]),
+    chunk("m2", 0, "B", [0.8, 0.6]), // same sim as A
+  ];
+  const masteryByConcept = new Map([["c1", 0.2]]); // slipping
+  const conceptsForChunk = new Map([
+    ["m1:0", [{ conceptId: "c1", label: "Eigenvalue" }]],
+    // m2:0 maps to no concept → neutral
+  ]);
+  const scored = scoreChunks(q, chunks, { masteryByConcept, conceptsForChunk });
+  const a = scored.find((s) => s.c.materialId === "m1")!;
+  const b = scored.find((s) => s.c.materialId === "m2")!;
+  assert.ok(a.score > b.score, "slipping-concept chunk should outrank neutral");
+  assert.ok(Math.abs(b.score - b.sim) < 1e-6, "neutral chunk: score === sim");
+  // boost = 0.15 * (1 - 0.2) = 0.12
+  assert.ok(Math.abs(a.score - (a.sim + 0.12)) < 1e-6);
+});
+
+test("scoreChunks: strong-concept chunk gets a tiny boost; untested is neutral", () => {
+  const q = vec(1, 0);
+  const chunks = [
+    chunk("m1", 0, "A", [0.9, 0.44]),
+    chunk("m2", 0, "B", [0.9, 0.44]),
+  ];
+  const masteryByConcept = new Map([
+    ["c1", 0.9],  // strong (reviewed)
+    // c2 untested: absent from masteryByConcept (no reviewed linked cards)
+  ]);
+  const conceptsForChunk = new Map([
+    ["m1:0", [{ conceptId: "c1", label: "Strong" }]],
+    ["m2:0", [{ conceptId: "c2", label: "Untested" }]],
+  ]);
+  const scored = scoreChunks(q, chunks, { masteryByConcept, conceptsForChunk });
+  const a = scored.find((s) => s.c.materialId === "m1")!;
+  const b = scored.find((s) => s.c.materialId === "m2")!;
+  // strong boost = 0.15 * (1 - 0.9) = 0.015
+  assert.ok(Math.abs(a.score - (a.sim + 0.015)) < 1e-6);
+  assert.ok(Math.abs(b.score - b.sim) < 1e-6, "untested concept → neutral");
+});

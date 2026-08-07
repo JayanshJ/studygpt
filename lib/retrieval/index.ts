@@ -4,6 +4,8 @@
 
 import { embedText, decodeEmbedding, cosine } from "@/lib/embed";
 import { listChunkEmbeddingsForProject } from "@/lib/db";
+import { conceptMasteryForProject, chunksToConcepts } from "@/lib/db/mastery";
+import type { Band } from "@/lib/mastery/model";
 import type { SourceEntry, Message } from "@/lib/db/schema";
 
 export interface ChunkEmb {
@@ -26,13 +28,33 @@ const DEFAULT_FLOOR = 0.22;
 export function scoreChunks(
   queryVec: Float32Array,
   chunks: ChunkEmb[],
-  opts?: { floor?: number },
+  opts?: {
+    floor?: number;
+    masteryByConcept?: Map<string, number>;
+    conceptsForChunk?: Map<string, { conceptId: string; label: string }[]>;
+  },
 ): ScoredChunk[] {
   const floor = opts?.floor ?? DEFAULT_FLOOR;
+  const MASTERY_WEIGHT = 0.15;
   return chunks
     .map((c) => {
       const sim = cosine(queryVec, decodeEmbedding(c.embedding));
-      return { c, sim, score: sim } as ScoredChunk; // score extended in Task 5
+      let score = sim;
+      if (opts?.masteryByConcept && opts?.conceptsForChunk) {
+        const linked = opts.conceptsForChunk.get(`${c.materialId}:${c.ordinal}`);
+        if (linked && linked.length) {
+          // max numeric mastery among reviewed concepts; untested/unknown absent
+          let chunkMastery: number | null = null;
+          for (const lc of linked) {
+            const m = opts.masteryByConcept.get(lc.conceptId);
+            if (m != null && Number.isFinite(m)) {
+              chunkMastery = chunkMastery == null ? m : Math.max(chunkMastery, m);
+            }
+          }
+          if (chunkMastery != null) score = sim + MASTERY_WEIGHT * (1 - chunkMastery);
+        }
+      }
+      return { c, sim, score } as ScoredChunk;
     })
     .filter((s) => Number.isFinite(s.sim) && s.sim >= floor)
     .sort((a, b) => b.score - a.score);
@@ -54,6 +76,32 @@ export async function retrieve(opts: {
   try {
     if (opts.projectId) {
       const chunks = listChunkEmbeddingsForProject(opts.projectId);
+      // --- Mastery signal (SP4) --------------------------------------
+      // Build per-project mastery map + chunk→concepts index once per
+      // retrieve call. Empty when the project has no concepts/mastery → every
+      // chunk neutral → behavior identical to Task 4 (regression guard).
+      const now = Date.now();
+      const masteryMap = conceptMasteryForProject(opts.projectId, now);
+      // numeric mastery by concept id (only reviewed concepts have a number)
+      const masteryByConcept = new Map<string, number>();
+      for (const [cid, m] of masteryMap) {
+        if (m.mastery != null) masteryByConcept.set(cid, m.mastery);
+      }
+      // Batched: one chunksToConcepts call per material with all its ordinals.
+      const conceptsForChunk = new Map<string, { conceptId: string; label: string }[]>();
+      const ordinalsByMaterial = new Map<string, number[]>();
+      for (const c of chunks) {
+        let arr = ordinalsByMaterial.get(c.materialId);
+        if (!arr) {
+          arr = [];
+          ordinalsByMaterial.set(c.materialId, arr);
+        }
+        arr.push(c.ordinal);
+      }
+      for (const [mid, ords] of ordinalsByMaterial) {
+        const m = chunksToConcepts(mid, ords);
+        for (const [k, v] of m) conceptsForChunk.set(k, v);
+      }
       if (chunks.length > 0 && opts.lastUser) {
         // Clean the query: strip leading `>` quote lines and markdown fences,
         // collapse whitespace, truncate to ~600 chars.
@@ -166,7 +214,7 @@ export async function retrieve(opts: {
 
         // --- Semantic scoring (for non-explicit selection) ------------
         const qVec = new Float32Array(await embedText(cleanQuery));
-        const scored = scoreChunks(qVec, chunks.map((c) => ({ materialId: c.materialId, ordinal: c.ordinal, text: c.text, materialTitle: c.materialTitle ?? "", embedding: c.embedding })));
+        const scored = scoreChunks(qVec, chunks.map((c) => ({ materialId: c.materialId, ordinal: c.ordinal, text: c.text, materialTitle: c.materialTitle ?? "", embedding: c.embedding })), { masteryByConcept, conceptsForChunk });
         const eligible = scored; // already floored + sorted
 
         // Material routing: per-material max chunk score → rank → top 4
@@ -259,12 +307,19 @@ export async function retrieve(opts: {
           }
         }
 
-        sources = picked.map((s) => ({
-          materialId: s.c.materialId,
-          title: s.c.materialTitle,
-          snippet: s.c.text.slice(0, 240),
-          ordinal: s.c.ordinal,
-        }));
+        sources = picked.map((s) => {
+          const concepts = (conceptsForChunk.get(`${s.c.materialId}:${s.c.ordinal}`) ?? []).map((c) => ({
+            label: c.label,
+            band: masteryMap.get(c.conceptId)?.band ?? ("unknown" as Band),
+          }));
+          return {
+            materialId: s.c.materialId,
+            title: s.c.materialTitle,
+            snippet: s.c.text.slice(0, 240),
+            ordinal: s.c.ordinal,
+            ...(concepts.length ? { concepts } : {}),
+          } satisfies SourceEntry;
+        });
 
         const inventoryLines = inventory
           .map((m, i) => `${i + 1}. ${m.title} (${m.count} chunk${m.count === 1 ? "" : "s"})`)
@@ -278,7 +333,11 @@ export async function retrieve(opts: {
             g = { title: s.c.materialTitle, texts: [] };
             byMaterial.set(s.c.materialId, g);
           }
-          g.texts.push(s.c.text);
+          const concepts = conceptsForChunk.get(`${s.c.materialId}:${s.c.ordinal}`) ?? [];
+          const header = concepts.length
+            ? `[covers: ${concepts.map((c) => `${c.label} (${masteryMap.get(c.conceptId)?.band ?? "unknown"})`).join(", ")}]\n`
+            : "";
+          g.texts.push(header + s.c.text);
         }
 
         const excerpts = [...byMaterial.values()]
