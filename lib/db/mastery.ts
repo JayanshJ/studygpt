@@ -101,7 +101,7 @@ export function cardMastery(cardId: string, now: number): { mastery: number | nu
   const sched = getCardScheduling(cardId) as CardScheduling | undefined;
   if (!sched) return { mastery: null, band: "untested" };
   const R = cardRetrievability({ stability: sched.stability, last_review: sched.last_review }, now);
-  const mastery = Number.isFinite(R) ? Math.min(1, Math.max(0, R)) : null;
+  const mastery = Number.isFinite(R) ? Math.min(1, Math.max(0, R)) : 0;
   return { mastery, band: masteryBand(mastery, 1, 1) };
 }
 
