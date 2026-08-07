@@ -44,9 +44,18 @@ export function layoutNodes(
     return out;
   }
 
-  const cx = width / 2;
-  const cy = height / 2;
-  const radius = Math.min(width, height) / 3;
+  // Density control: scale the effective canvas with node count so dense graphs
+  // get proportionally more room (lower density after @xyflow's fitView zooms
+  // to fit) while small graphs stay compact. spread = sqrt(n/25), clamped so
+  // tiny graphs aren't over-spread and huge ones don't run away. fitView
+  // normalizes the absolute size away, so what matters is the gap-to-node-size
+  // ratio, which the larger canvas + stronger forces below preserve.
+  const spread = Math.max(1, Math.min(3, Math.sqrt(nodes.length / 25)));
+  const w = width * spread;
+  const h = height * spread;
+  const cx = w / 2;
+  const cy = h / 2;
+  const radius = (Math.min(w, h) / 2) * 0.85;
 
   type SimNode = SimulationNodeDatum & { id: string; r: number };
   const simNodes: SimNode[] = nodes.map((n, i) => {
@@ -61,19 +70,28 @@ export function layoutNodes(
     .filter((l) => idIndex.has(l.source) && idIndex.has(l.target) && l.source !== l.target)
     .map((l) => ({ source: l.source, target: l.target }));
 
+  // Force tuning (measured against the Maths graph: 41 overview clusters, up to
+  // 80 concept nodes per drill-down): charge -600 gives non-neighbors breathing
+  // room, link distance 150 + strength 0.4 keeps connected nodes related without
+  // collapsing the component, collide r+14 guarantees a 28px min gap (no overlap),
+  // forceCenter re-centers the settled cloud. forceCenter only translates the
+  // center of mass — it does not collapse nodes onto each other.
   const simulation = forceSimulation<SimNode>(simNodes)
-    .force("charge", forceManyBody().strength(-240))
+    .force("charge", forceManyBody().strength(-600))
     .force(
       "link",
       forceLink<SimNode, { source: string; target: string }>(simLinks)
         .id((d) => d.id)
-        .distance(90),
+        .distance(150)
+        .strength(0.4),
     )
-    .force("collide", forceCollide<SimNode>().radius((d) => d.r + 8))
+    .force("collide", forceCollide<SimNode>().radius((d) => d.r + 14))
     .force("center", forceCenter(cx, cy));
 
-  // Synchronous settle: run fixed ticks, then stop so it doesn't keep animating.
-  for (let i = 0; i < 300; i++) simulation.tick();
+  // Synchronous settle: more ticks for larger graphs so they reach equilibrium.
+  // Bounded so small graphs settle fast. Run fixed ticks, then stop.
+  const ticks = Math.min(700, 250 + nodes.length * 5);
+  for (let i = 0; i < ticks; i++) simulation.tick();
   simulation.stop();
 
   for (const n of simNodes) out.set(n.id, { x: n.x ?? cx, y: n.y ?? cy });
