@@ -59,6 +59,13 @@ export function Sidebar({
             ▤
           </Link>
           <Link
+            href="/review"
+            aria-label="Review"
+            className="mono text-ink-3 transition-colors hover:text-ink"
+          >
+            ⟳
+          </Link>
+          <Link
             href="/settings"
             aria-label="Settings"
             className="mono text-ink-3 transition-colors hover:text-ink"
