@@ -313,4 +313,5 @@ export * from "./sources";
 export * from "./decks";
 export * from "./reviews";
 export * from "./concepts";
-export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment, Message, MessageKind, Deck, Card, CardScheduling, ReviewLog, Concept, ConceptEdge, ConceptSource, MaterialExtraction, MaterialExtractionStatus, EdgeConfidence, ConceptRelation } from "./schema";
+export * from "./mastery";
+export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment, Message, MessageKind, Deck, Card, CardScheduling, ReviewLog, Concept, ConceptEdge, ConceptSource, CardConcept, MaterialExtraction, MaterialExtractionStatus, EdgeConfidence, ConceptRelation } from "./schema";

@@ -2,6 +2,7 @@ import { db } from "./index";
 import { getDeck } from "./decks";
 import type { CardScheduling } from "./schema";
 import { Rating, CardState, type SchedCard } from "@/lib/fsrs/algorithm";
+import type { Band } from "@/lib/mastery/model";
 
 export interface CardDue {
   id: string;
@@ -11,6 +12,8 @@ export interface CardDue {
   deckTitle: string;
   state: CardState;
   due: number | null; // null for new cards
+  mastery?: number | null;
+  band?: Band;
 }
 
 function startOfTodayMs(now: number): number {

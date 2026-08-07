@@ -5,6 +5,8 @@
 // Run via migrate() in index.ts on first connect; uses CREATE TABLE IF NOT EXISTS
 // so it's idempotent and safe to extend.
 
+import type { Band } from "@/lib/mastery/model";
+
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
@@ -190,6 +192,18 @@ export const SCHEMA_SQL = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_review_log_card ON review_log(card_id)`,
   `CREATE INDEX IF NOT EXISTS idx_review_log_deck_time ON review_log(deck_id, reviewed_at)`,
+  // --- Phase 3: mastery (SP4) — card ↔ concept bridge ---
+  `CREATE TABLE IF NOT EXISTS card_concepts (
+    card_id     TEXT NOT NULL,
+    concept_id  TEXT NOT NULL,
+    score       REAL NOT NULL,
+    created_at  INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
+    FOREIGN KEY (concept_id) REFERENCES concepts(id) ON DELETE CASCADE,
+    UNIQUE(card_id, concept_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_card_concepts_card ON card_concepts(card_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_card_concepts_concept ON card_concepts(concept_id)`,
 ] as const;
 
 export type ConversationMode = "chat" | "feynman";
@@ -304,6 +318,7 @@ export interface SourceEntry {
   title: string;
   snippet: string;
   ordinal: number;
+  concepts?: { label: string; band: Band }[];
 }
 
 // --- Phase 3 (SP1): concept graph types ---
@@ -355,6 +370,13 @@ export interface ConceptSource {
   material_id: string;
   ordinal: number;
   snippet: string | null;
+  created_at: number;
+}
+
+export interface CardConcept {
+  card_id: string;
+  concept_id: string;
+  score: number;
   created_at: number;
 }
 
