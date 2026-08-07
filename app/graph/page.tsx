@@ -82,12 +82,13 @@ export default function GraphPage() {
         const a = c2cluster.get(e.source);
         const b = c2cluster.get(e.target);
         if (!a || !b || a === b) continue;
-        const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+        const [src, tgt] = a < b ? [a, b] : [b, a];
+        const key = `${src}|${tgt}`;
         const prev = pair.get(key);
         if (prev) prev.weight += 1;
-        else pair.set(key, { ...e, weight: 1 });
+        else pair.set(key, { source: src, target: tgt, relation: e.relation, confidence: e.confidence, score: e.score, weight: 1 });
       }
-      return { kind: "overview" as const, clusters, concepts: [], edges: [...pair.values()] };
+      return { kind: "overview" as const, clusters, concepts: [] as GraphConcept[], edges: [...pair.values()] };
     }
     const cl = clusterById.get(view.clusterId);
     const memberSet = new Set(cl?.conceptIds ?? []);

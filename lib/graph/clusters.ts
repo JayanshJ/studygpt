@@ -17,6 +17,7 @@ export interface GraphEdge {
   relation: string;
   confidence: string;
   score: number | null;
+  weight?: number; // overview-only: count of concept edges crossing this cluster pair
 }
 
 export interface GraphData {

@@ -207,10 +207,29 @@ export function ConceptGraph({
       .filter((e) => nodeIds.includes(e.source) && nodeIds.includes(e.target) && e.source !== e.target)
       .map((e) => {
         const dimmed = !!focusId && e.source !== focusId && e.target !== focusId;
-        const dashed = e.relation === "semantically_similar_to";
-        const op = edgeOpacity(e.score) * (dimmed ? 0.25 : 1);
         const id = `${e.source}->${e.target}->${e.relation}`;
         const isHoveredEdge = id === hoveredEdgeId;
+        if (kind === "overview") {
+          // Aggregated inter-cluster edge: stroke width + opacity scale with the
+          // count of concept edges crossing this cluster pair (spec: neutral ink-3).
+          // No dash — aggregation loses per-edge relation meaning.
+          const w = e.weight ?? 1;
+          const sw = 1 + Math.min(w, 6) * 0.6;
+          const op = Math.min(0.8, 0.25 + w * 0.08) * (dimmed ? 0.25 : 1);
+          return {
+            id,
+            source: e.source,
+            target: e.target,
+            style: { stroke: "var(--ink-3)", strokeWidth: sw, strokeOpacity: op },
+            markerEnd: { type: MarkerType.ArrowClosed, color: "var(--ink-3)" },
+            label: isHoveredEdge ? `${w} links` : undefined,
+            labelStyle: { fontFamily: "monospace", fontSize: 10, fill: "var(--ink-2)" },
+            labelBgStyle: { fill: "var(--paper)" },
+            labelBgPadding: [2, 1] as [number, number],
+          };
+        }
+        const dashed = e.relation === "semantically_similar_to";
+        const op = edgeOpacity(e.score) * (dimmed ? 0.25 : 1);
         return {
           id,
           source: e.source,
