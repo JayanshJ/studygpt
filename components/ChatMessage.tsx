@@ -42,7 +42,30 @@ interface Props {
   onRegenerate?: () => void;
   onEdit?: (newContent: string, attachments: Attachment[]) => void;
   canRegenerate?: boolean;
+  // Passed through to <Markdown> so an inline ```flashcard deck can title and
+  // link the deck it saves back to this conversation.
+  conversationTitle?: string;
+  conversationId?: string;
+  // Live status phase while streaming ("thinking" | "reading-materials" |
+  // "drafting-document" | "searching" | "writing"). Rendered as a thin mono
+  // status line above the bubble while truthy.
+  status?: string;
+  // Model reasoning (thinking trace) streamed in. Rendered in a collapsible
+  // <details> panel above the content, via <Markdown>.
+  reasoning?: string;
+  // All materials in the active project — threaded through to SourcesPanel so
+  // it can show every material and mark which were used in this answer.
+  allMaterials?: { id: string; title: string }[];
 }
+
+// Maps a streaming status phase to the small label shown above the bubble.
+const STATUS_LABELS: Record<string, string> = {
+  thinking: "thinking…",
+  "reading-materials": "reading your materials…",
+  "drafting-document": "drafting document…",
+  searching: "searching the web…",
+  writing: "writing…",
+};
 
 export function ChatMessage({
   role,
@@ -56,6 +79,11 @@ export function ChatMessage({
   onRegenerate,
   onEdit,
   canRegenerate,
+  conversationTitle,
+  conversationId,
+  status,
+  reasoning,
+  allMaterials,
 }: Props) {
   const isUser = role === "user";
   const [editing, setEditing] = useState(false);
@@ -245,7 +273,27 @@ export function ChatMessage({
               )}
             </div>
           </div>
-          <Markdown content={content} className="prose-chat text-ink" streaming={streaming} />
+          {status && (
+            <div className="mono mb-2 flex items-center gap-1.5 text-[10px] tracking-wide text-ink-3">
+              <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-feynman" />
+              {STATUS_LABELS[status] ?? status}
+            </div>
+          )}
+          {reasoning && (
+            <details className="mb-3 rounded-[2px] border border-line bg-paper-3/60 px-3 py-2">
+              <summary className="mono cursor-pointer text-[10px] tracking-wide text-ink-3 hover:text-ink">
+                thinking
+              </summary>
+              <Markdown content={reasoning} className="prose-chat mt-2 text-[13px] text-ink-2" />
+            </details>
+          )}
+          <Markdown
+            content={content}
+            className="prose-chat text-ink"
+            streaming={streaming}
+            conversationTitle={conversationTitle}
+            conversationId={conversationId}
+          />
           {streaming && (
             <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
           )}
@@ -262,7 +310,9 @@ export function ChatMessage({
               <span className="text-ink-3">opens a clean page, then click save as PDF</span>
             </div>
           )}
-          {!streaming && <SourcesPanel sources={sources ?? []} />}
+          {!streaming && (
+            <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />
+          )}
         </div>
       </div>
     );
@@ -286,11 +336,33 @@ export function ChatMessage({
             )}
           </div>
         </div>
-        <Markdown content={content} className="prose-chat text-ink" streaming={streaming} />
+        {status && (
+          <div className="mono mb-2 flex items-center gap-1.5 text-[10px] tracking-wide text-ink-3">
+            <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-feynman" />
+            {STATUS_LABELS[status] ?? status}
+          </div>
+        )}
+        {reasoning && (
+          <details className="mb-3 rounded-[2px] border border-line bg-paper-3/60 px-3 py-2">
+            <summary className="mono cursor-pointer text-[10px] tracking-wide text-ink-3 hover:text-ink">
+              thinking
+            </summary>
+            <Markdown content={reasoning} className="prose-chat mt-2 text-[13px] text-ink-2" />
+          </details>
+        )}
+        <Markdown
+          content={content}
+          className="prose-chat text-ink"
+          streaming={streaming}
+          conversationTitle={conversationTitle}
+          conversationId={conversationId}
+        />
         {streaming && (
           <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
         )}
-        {!streaming && <SourcesPanel sources={sources ?? []} />}
+        {!streaming && (
+          <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />
+        )}
       </div>
     </div>
   );

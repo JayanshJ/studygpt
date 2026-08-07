@@ -15,6 +15,8 @@ export async function PATCH(req: Request) {
   if (typeof body.model === "string") setSetting("model", body.model);
   if (typeof body.baseUrl === "string") setSetting("baseUrl", body.baseUrl);
   if (typeof body.apiKey === "string") setSetting("apiKey", body.apiKey);
+  if (typeof body.tavilyApiKey === "string") setSetting("tavilyApiKey", body.tavilyApiKey);
+  if (typeof body.openaiApiKey === "string") setSetting("openaiApiKey", body.openaiApiKey);
   if (typeof body.theme === "string") setSetting("theme", body.theme);
   if (typeof body.embeddingModel === "string") setSetting("embeddingModel", body.embeddingModel);
   return NextResponse.json({ ...getModelConfig(), totalTokens: getTotalTokens(), raw: getAllSettings() });

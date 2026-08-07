@@ -4,6 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Material, Project } from "@/lib/db/schema";
 
+// Concept-graph read shape from GET /api/concepts (SP1). SP2's graph page and
+// SP4's mastery layer will extend this; SP1 only carries concepts, edges, and
+// per-material extraction status.
+type ConceptReport = {
+  concepts: { id: string; label: string; slug: string; description: string | null; sourceCount: number }[];
+  edges: { source: string; target: string; relation: string; confidence: string; score: number | null }[];
+  materials: {
+    materialId: string;
+    title: string;
+    status: "pending" | "extracting" | "ready" | "error";
+    conceptCount: number;
+    error: string | null;
+  }[];
+};
+
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -15,6 +30,8 @@ export default function ProjectsPage() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [conceptsReport, setConceptsReport] = useState<ConceptReport | null>(null);
+  const [building, setBuilding] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadProjects = useCallback(async () => {
@@ -28,6 +45,11 @@ export default function ProjectsPage() {
       const d: { project: Project; materials: Material[] } = await res.json();
       setMaterials(d.materials);
     }
+  }, []);
+
+  const loadConcepts = useCallback(async (id: string) => {
+    const res = await fetch(`/api/concepts?projectId=${encodeURIComponent(id)}`);
+    if (res.ok) setConceptsReport(await res.json());
   }, []);
 
   useEffect(() => {
@@ -53,10 +75,12 @@ export default function ProjectsPage() {
     if (!selectedId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMaterials([]);
+      setConceptsReport(null);
       return;
     }
     loadMaterials(selectedId);
-  }, [selectedId, loadMaterials]);
+    loadConcepts(selectedId);
+  }, [selectedId, loadMaterials, loadConcepts]);
 
   // Poll while any material is still processing.
   useEffect(() => {
@@ -67,6 +91,19 @@ export default function ProjectsPage() {
     }, 1000);
     return () => clearInterval(t);
   }, [selectedId, materials, loadMaterials]);
+
+  // Poll while any material's concept extraction is in flight. The POST to
+  // /api/concepts/extract runs server-side and may take a while for a large
+  // project; this lets the per-material chip show live "extracting…" → "N
+  // concepts" progress while it runs.
+  useEffect(() => {
+    const anyExtracting = (conceptsReport?.materials ?? []).some((m) => m.status === "extracting");
+    if (!selectedId || !anyExtracting) return;
+    const t = setInterval(() => {
+      loadConcepts(selectedId);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [selectedId, conceptsReport, loadConcepts]);
 
   async function createProject(e: React.FormEvent) {
     e.preventDefault();
@@ -186,7 +223,70 @@ export default function ProjectsPage() {
     if (selectedId) await loadMaterials(selectedId);
   }
 
+  // Build (or refresh) the concept graph for the selected project. The POST
+  // preflights the chat model and runs extraction server-side; it resolves
+  // only once every ready material is processed, so we surface the summary
+  // (processed / concepts / edges / skipped / chunk errors) in the status line.
+  async function buildGraph() {
+    if (!selectedId) return;
+    setBuilding(true);
+    setStatusMsg("Building concept graph…");
+    // Refresh once up front so the poll effect can observe the per-material
+    // "extracting" state the server sets while the POST runs.
+    void loadConcepts(selectedId);
+    try {
+      const res = await fetch("/api/concepts/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: selectedId }),
+      });
+      if (res.ok) {
+        const r: { processed: number; concepts: number; edges: number; skipped: number; errors: string[] } =
+          await res.json();
+        const parts = [
+          `processed ${r.processed}`,
+          `${r.concepts} concepts`,
+          `${r.edges} edges`,
+        ];
+        if (r.skipped) parts.push(`skipped ${r.skipped}`);
+        if (r.errors.length) parts.push(`${r.errors.length} chunk error(s)`);
+        setStatusMsg(parts.join(" · "));
+      } else {
+        const err = await res.text();
+        setStatusMsg(err || "Build failed");
+      }
+    } finally {
+      setBuilding(false);
+      if (selectedId) await loadConcepts(selectedId);
+    }
+  }
+
   const selected = projects.find((p) => p.id === selectedId) ?? null;
+
+  // Concept-graph derived state for the selected project. extById is hoisted
+  // once per render so each material row can look up its extraction status
+  // without a per-row DB hit or a map rebuild.
+  const readyMaterialCount = materials.filter((m) => m.status === "ready").length;
+  const conceptCount = conceptsReport?.concepts.length ?? 0;
+  const edgeCount = conceptsReport?.edges.length ?? 0;
+  const extById = new Map((conceptsReport?.materials ?? []).map((r) => [r.materialId, r]));
+  const renderConceptChip = (materialId: string) => {
+    const ext = extById.get(materialId);
+    if (!ext || ext.status === "pending") return null;
+    if (ext.status === "extracting")
+      return <span className="mono text-[10px] text-feynman">extracting…</span>;
+    if (ext.status === "error")
+      return (
+        <span className="mono max-w-[140px] truncate text-[10px] text-rule" title={ext.error ?? ""}>
+          extraction failed
+        </span>
+      );
+    return (
+      <span className="mono text-[10px] text-ink-2">
+        {ext.conceptCount} concept{ext.conceptCount === 1 ? "" : "s"}
+      </span>
+    );
+  };
 
   return (
     <div className="graph-paper min-h-screen">
@@ -322,6 +422,24 @@ export default function ProjectsPage() {
                   </span>
                 </div>
 
+                {/* Build concept graph (SP1). Disabled while building or when
+                    no material is ready to extract from. The chip shows the
+                    current concept/edge totals once a graph exists. */}
+                <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
+                  <button
+                    onClick={buildGraph}
+                    disabled={building || readyMaterialCount === 0}
+                    className="mono rounded-[3px] border border-line bg-paper px-3 py-1.5 text-[12px] tracking-wide text-ink transition-colors hover:border-ink/40 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line"
+                  >
+                    {building ? "building…" : "build concept graph"}
+                  </button>
+                  {(conceptCount > 0 || edgeCount > 0) && (
+                    <span className="mono text-[11px] text-ink-3">
+                      {conceptCount} concepts · {edgeCount} edges
+                    </span>
+                  )}
+                </div>
+
                 {/* Add material */}
                 <div className="mb-5 flex flex-col gap-2 border-b border-line pb-4">
                   <label className="mono text-[11px] tracking-wide text-ink-3">
@@ -409,6 +527,7 @@ export default function ProjectsPage() {
                       <span className="mono text-[10px] text-ink-3">
                         {m.char_count.toLocaleString()} chars
                       </span>
+                      {renderConceptChip(m.id)}
                       {m.status === "error" && m.error && (
                         <span
                           className="mono max-w-[180px] truncate text-[10px] text-rule"

@@ -38,6 +38,8 @@ export function getModelConfig(): {
   embeddingModel: string;
   baseURL: string;
   apiKey: string;
+  tavilyApiKey: string;
+  openaiApiKey: string;
 } {
   const all = getAllSettings();
   return {
@@ -46,5 +48,11 @@ export function getModelConfig(): {
     embeddingModel: all.embeddingModel || process.env.OLLAMA_EMBEDDING_MODEL || "nomic-embed-text",
     baseURL: all.baseUrl || process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1",
     apiKey: all.apiKey || "",
+    tavilyApiKey: all.tavilyApiKey || process.env.TAVILY_API_KEY || "",
+    // Used only for voice typing: the mic records a clip and the server proxies
+    // it to OpenAI's Whisper transcription endpoint. Kept server-side so the
+    // key never reaches the browser. Empty → voice falls back to the browser's
+    // built-in Web Speech API (which needs Google's service, often blocked).
+    openaiApiKey: all.openaiApiKey || process.env.OPENAI_API_KEY || "",
   };
 }

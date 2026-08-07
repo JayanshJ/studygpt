@@ -7,17 +7,28 @@ import remarkGfm from "remark-gfm";
 import rehypeKatex from "rehype-katex";
 import { CodeBlock } from "./CodeBlock";
 import { Artifact } from "./Artifact";
+import { FlashcardDeck } from "./FlashcardDeck";
 import { extractText } from "@/lib/markdown/extract-text";
 import { normalizeMathDelimiters } from "@/lib/markdown/normalize-math";
 
 // Route a fenced code block by its language: an ```artifact fence renders a
-// live sandboxed HTML visualization; any other fence renders the normal
-// CodeBlock. While streaming, an artifact fence shows a placeholder —
-// mounting an iframe on a half-streamed HTML document would reload it on
-// every chunk and flash broken content. `children` is the inner <code>
-// element react-markdown places inside <pre>; its className carries the
-// language as `language-<lang>`.
-function PreBlock({ children, streaming }: { children?: ReactNode; streaming?: boolean }) {
+// live sandboxed HTML visualization; a ```flashcard fence renders an
+// interactive flip deck. Any other fence renders the normal CodeBlock. While
+// streaming, an artifact/flashcard fence shows a placeholder — mounting the
+// widget on a half-streamed block would reload/re-parse it on every chunk.
+// `children` is the inner <code> element react-markdown places inside <pre>;
+// its className carries the language as `language-<lang>`.
+function PreBlock({
+  children,
+  streaming,
+  conversationTitle,
+  conversationId,
+}: {
+  children?: ReactNode;
+  streaming?: boolean;
+  conversationTitle?: string;
+  conversationId?: string;
+}) {
   const codeEl = (Array.isArray(children) ? children[0] : children) as
     | { props?: { className?: string } }
     | undefined;
@@ -33,21 +44,60 @@ function PreBlock({ children, streaming }: { children?: ReactNode; streaming?: b
     }
     return <Artifact html={extractText(children)} />;
   }
+  if (lang === "flashcard") {
+    if (streaming) {
+      return (
+        <div className="mono my-2 rounded-[3px] border border-line bg-paper-2 px-4 py-3 text-[12px] text-ink-3">
+          building flashcards…
+        </div>
+      );
+    }
+    return (
+      <FlashcardDeck
+        source={extractText(children)}
+        conversationTitle={conversationTitle}
+        conversationId={conversationId}
+      />
+    );
+  }
   return <CodeBlock>{children}</CodeBlock>;
 }
 
 // The single markdown-rendering config for the app: remark-math + remark-gfm
 // (tables/strikethrough/autolinks/task-lists) + rehype-katex, with LaTeX
 // delimiters normalized before parse so \(...\)/\[...\] also render. `pre` is
-// routed via PreBlock (artifact vs. CodeBlock). Shared by ChatMessage and the
-// /print page so a document renders identically in the chat card and the PDF.
-export function Markdown({ content, className, streaming }: { content: string; className?: string; streaming?: boolean }) {
+// routed via PreBlock (artifact/flashcard vs. CodeBlock). Shared by ChatMessage
+// and the /print page so a document renders identically in the chat card and
+// the PDF. `conversationTitle`/`conversationId` thread through so an inline
+// flashcard deck can title + link the deck it saves to the originating chat.
+export function Markdown({
+  content,
+  className,
+  streaming,
+  conversationTitle,
+  conversationId,
+}: {
+  content: string;
+  className?: string;
+  streaming?: boolean;
+  conversationTitle?: string;
+  conversationId?: string;
+}) {
   return (
     <div className={className}>
       <ReactMarkdown
         remarkPlugins={[remarkMath, remarkGfm]}
         rehypePlugins={[rehypeKatex]}
-        components={{ pre: (props) => <PreBlock {...props} streaming={streaming} /> }}
+        components={{
+          pre: (props) => (
+            <PreBlock
+              {...props}
+              streaming={streaming}
+              conversationTitle={conversationTitle}
+              conversationId={conversationId}
+            />
+          ),
+        }}
       >
         {normalizeMathDelimiters(content || "")}
       </ReactMarkdown>

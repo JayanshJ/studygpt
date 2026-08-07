@@ -304,4 +304,6 @@ export function getAllSettings(): Record<string, string> {
 export * from "./projects";
 export * from "./materials";
 export * from "./sources";
-export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment, Message, MessageKind } from "./schema";
+export * from "./decks";
+export * from "./concepts";
+export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment, Message, MessageKind, Deck, Card, Concept, ConceptEdge, ConceptSource, MaterialExtraction, MaterialExtractionStatus, EdgeConfidence, ConceptRelation } from "./schema";

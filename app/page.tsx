@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
@@ -15,7 +15,14 @@ import type {
   SourceEntry,
 } from "@/lib/db/schema";
 
-type MessageWithSources = Message & { sources?: SourceEntry[] };
+type MessageWithSources = Message & {
+  sources?: SourceEntry[];
+  // Transient (in-memory only): not persisted to the DB. `upsertMessage`/
+  // DB only stores `content`. Surfaced live while streaming and dropped on
+  // reload.
+  reasoning?: string;
+  status?: string;
+};
 
 type ChatAction = "send" | "regenerate" | "edit";
 
@@ -35,6 +42,17 @@ const FEYNMAN_SUGGESTIONS = [
   "What is recursion?",
 ];
 
+// Reflect the active conversation in the URL as `?c=<id>` so a hard reload
+// restores it. Uses replaceState (not the Next router) to avoid re-renders /
+// navigation churn — the param is purely a persistence marker, not a route.
+function syncUrl(id: string | null) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (id) url.searchParams.set("c", id);
+  else url.searchParams.delete("c");
+  window.history.replaceState(null, "", url);
+}
+
 export default function Page() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -48,6 +66,10 @@ export default function Page() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectMaterialCount, setActiveProjectMaterialCount] = useState<number | null>(null);
+  // Full material list for the active project — threaded to <ChatMessage> so
+  // the SourcesPanel can show ALL of the project's materials (not just the
+  // ones cited in this turn) and mark which were used. Cleared on project change.
+  const [activeProjectMaterials, setActiveProjectMaterials] = useState<{ id: string; title: string }[]>([]);
   const [models, setModels] = useState<Array<{ id: string; vision: boolean }>>([]);
   // True until the first conversations fetch resolves — drives the sidebar's
   // skeleton rows so the first paint doesn't look like an empty account.
@@ -58,6 +80,10 @@ export default function Page() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastRunRef = useRef<Parameters<typeof runChat>[0] | null>(null);
+  // Remembers the last user-chosen `web` toggle setting. Regenerate/edit
+  // don't go through the composer, so they reuse this value to preserve the
+  // turn's web-search preference instead of reverting to the default.
+  const lastWebRef = useRef<boolean>(true);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -78,9 +104,41 @@ export default function Page() {
     if (res.ok) setModels((await res.json()).models ?? []);
   }, []);
 
+  // Whether voice typing should record+transcribe via the OpenAI Whisper proxy
+  // (server-side key) instead of the browser's built-in Web Speech API (which
+  // needs Google's service and is often blocked by Arc shields / blockers).
+  const [transcriptionAvailable, setTranscriptionAvailable] = useState(false);
+  useEffect(() => {
+    fetch("/api/transcribe")
+      .then((r) => (r.ok ? r.json() : { available: false }))
+      .then((d: { available?: boolean }) => setTranscriptionAvailable(!!d.available))
+      .catch(() => setTranscriptionAvailable(false));
+  }, []);
+
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  // Restore the active conversation from `?c=<id>` after the conversation list
+  // loads, so a hard reload lands back in the same chat instead of the empty
+  // screen. Runs once (restoredRef) and yields to an already-active selection.
+  const restoredRef = useRef(false);
+  const initialConvId = useMemo(
+    () => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("c")),
+    [],
+  );
+  useEffect(() => {
+    if (restoredRef.current || !initialConvId || !conversations.length || activeId) return;
+    restoredRef.current = true;
+    if (conversations.some((c) => c.id === initialConvId)) {
+      void selectConversation(initialConvId);
+    } else {
+      // Stale id (deleted in another tab) — clean the URL and stay on the
+      // empty screen.
+      syncUrl(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialConvId, conversations, activeId]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -99,13 +157,17 @@ export default function Page() {
     if (!pid) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveProjectMaterialCount(null);
+      setActiveProjectMaterials([]);
       return;
     }
     let cancelled = false;
     fetch(`/api/projects/${pid}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { project: Project; materials: Material[] } | null) => {
-        if (!cancelled && d) setActiveProjectMaterialCount(d.materials.length);
+        if (!cancelled && d) {
+          setActiveProjectMaterialCount(d.materials.length);
+          setActiveProjectMaterials(d.materials.map((m) => ({ id: m.id, title: m.title })));
+        }
       })
       .catch(() => {});
     return () => {
@@ -120,6 +182,7 @@ export default function Page() {
   async function selectConversation(id: string) {
     if (streaming) abortRef.current?.abort();
     setActiveId(id);
+    syncUrl(id);
     setError(null);
     setSidebarOpen(false);
     const res = await fetch(`/api/conversations/${id}`);
@@ -138,6 +201,7 @@ export default function Page() {
     const conv: Conversation = await res.json();
     setConversations((prev) => [conv, ...prev]);
     setActiveId(conv.id);
+    syncUrl(conv.id);
     setConversation(conv);
     setMessages([]);
   }
@@ -160,6 +224,7 @@ export default function Page() {
       setActiveId(null);
       setConversation(null);
       setMessages([]);
+      syncUrl(null);
     }
   }
 
@@ -204,6 +269,9 @@ export default function Page() {
     // true for a one-shot document turn → optimistic assistant bubble is
     // tagged kind='document' and the server uses the document-authoring prompt.
     document?: boolean;
+    // Web-search toggle from the composer. Regenerate/edit reuse the last
+    // user-chosen value via lastWebRef so those turns preserve the setting.
+    web?: boolean;
   }) {
     const conv = conversation;
     if (!conv) return;
@@ -218,6 +286,7 @@ export default function Page() {
       attachments: null,
       tokens: null,
       created_at: Date.now(),
+      status: "thinking",
     };
     setMessages([...args.baseDisplay, assistantMsg]);
     setAssistantStreamId(args.assistantId);
@@ -226,6 +295,12 @@ export default function Page() {
     const controller = new AbortController();
     abortRef.current = controller;
     let acc = "";
+    // Patch the in-flight assistant message by id, merging the given fields
+    // into the matching entry in setMessages. Used by the SSE handlers below.
+    const patch = (fields: Partial<Pick<MessageWithSources, "content" | "reasoning" | "status">>) =>
+      setMessages((prev) =>
+        prev.map((m) => (m.id === args.assistantId ? { ...m, ...fields } : m)),
+      );
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -241,6 +316,7 @@ export default function Page() {
           editContent: args.editContent,
           editAttachments: args.editAttachments,
           document: args.document,
+          web: args.web,
         }),
         signal: controller.signal,
       });
@@ -251,15 +327,42 @@ export default function Page() {
       }
       if (!res.body) throw new Error("No response stream");
 
+      // SSE stream: each event is a line `data: <single-line-json>\n\n`.
+      // Dispatch on evt.type: text/reasoning accumulate, status sets phase,
+      // error surfaces, done falls through to finish handling.
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
+      let buffer = "";
+      let reasoningAcc = "";
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        acc += decoder.decode(value, { stream: true });
-        setMessages((prev) =>
-          prev.map((m) => (m.id === args.assistantId ? { ...m, content: acc } : m)),
-        );
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const raw of lines) {
+          if (!raw.startsWith("data: ")) continue;
+          type SseEvent =
+            | { type: "text"; delta: string }
+            | { type: "reasoning"; delta: string }
+            | { type: "status"; phase: string; query?: string }
+            | { type: "error"; message: string }
+            | { type: "done" };
+          let evt: SseEvent;
+          try { evt = JSON.parse(raw.slice(6)); } catch { continue; }
+          if (evt.type === "text") {
+            acc += evt.delta;
+            patch({ content: acc, status: acc ? "writing" : "thinking" });
+          } else if (evt.type === "reasoning") {
+            reasoningAcc += evt.delta;
+            patch({ reasoning: reasoningAcc });
+          } else if (evt.type === "status") {
+            patch({ status: evt.phase });
+          } else if (evt.type === "error") {
+            setError(evt.message);
+          }
+          // "done" → fall through to finish handling
+        }
       }
     } catch (err) {
       if (controller.signal.aborted) {
@@ -306,11 +409,18 @@ export default function Page() {
       setStreaming(false);
       setAssistantStreamId(null);
       abortRef.current = null;
+      // Clear the transient status/reasoning-in-progress flag now that the
+      // turn is finished (or stopped with a partial). The status line above
+      // the bubble only shows while a phase is active.
+      setMessages((prev) =>
+        prev.map((m) => (m.id === args.assistantId ? { ...m, status: undefined } : m)),
+      );
     }
   }
 
-  async function sendMessage(text: string, attachments: Attachment[], document = false) {
+  async function sendMessage(text: string, attachments: Attachment[], document = false, web = true) {
     if (!conversation || streaming) return;
+    lastWebRef.current = web;
     const userMsg: MessageWithSources = {
       id: crypto.randomUUID(),
       conversation_id: conversation.id,
@@ -339,6 +449,7 @@ export default function Page() {
       assistantId: crypto.randomUUID(),
       userMessageId: userMsg.id,
       document,
+      web,
     });
   }
 
@@ -368,6 +479,7 @@ export default function Page() {
       // Regenerating a document stays a document (keeps the document prompt +
       // document card); regenerating a chat reply stays chat.
       document: lastAssistant.kind === "document",
+      web: lastWebRef.current,
     });
   }
 
@@ -386,6 +498,7 @@ export default function Page() {
       editMessageId: messageId,
       editContent: newContent,
       editAttachments: attachments,
+      web: lastWebRef.current,
     });
   }
 
@@ -569,9 +682,14 @@ export default function Page() {
                 kind={m.kind}
                 streaming={streaming && m.id === assistantStreamId}
                 sources={m.sources}
+                status={m.status}
+                reasoning={m.reasoning}
+                allMaterials={activeProjectMaterials}
                 canRegenerate={m.id === lastAssistantId}
                 onRegenerate={regenerate}
                 onEdit={(content, attachments) => editMessage(m.id, content, attachments)}
+                conversationTitle={conversation?.title}
+                conversationId={conversation?.id}
               />
             ))}
           </div>
@@ -594,6 +712,7 @@ export default function Page() {
           streaming={streaming}
           disabled={streaming || !conversation}
           projectId={conversation?.project_id ?? null}
+          transcriptionAvailable={transcriptionAvailable}
           initialText={pendingPrompt ?? undefined}
           placeholder={
             conversation

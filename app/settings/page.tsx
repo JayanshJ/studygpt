@@ -9,6 +9,8 @@ interface Config {
   model: string;
   baseURL: string;
   apiKey: string;
+  tavilyApiKey: string;
+  openaiApiKey: string;
   totalTokens: number;
 }
 
@@ -17,7 +19,11 @@ export default function SettingsPage() {
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [tavilyApiKey, setTavilyApiKey] = useState("");
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [showTavilyKey, setShowTavilyKey] = useState(false);
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +35,8 @@ export default function SettingsPage() {
         setModel(c.model);
         setBaseUrl(c.baseURL);
         setApiKey(c.apiKey || "");
+        setTavilyApiKey(c.tavilyApiKey || "");
+        setOpenaiApiKey(c.openaiApiKey || "");
       })
       .catch(() => setError("Could not load settings."));
   }, []);
@@ -40,7 +48,7 @@ export default function SettingsPage() {
     const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "ollama", model, baseUrl, apiKey }),
+      body: JSON.stringify({ provider: "ollama", model, baseUrl, apiKey, tavilyApiKey, openaiApiKey }),
     });
     if (res.ok) {
       setSaved(true);
@@ -151,6 +159,54 @@ export default function SettingsPage() {
                 className="mono shrink-0 text-[11px] tracking-wide text-ink-3 hover:text-ink"
               >
                 {showKey ? "hide" : "show"}
+              </button>
+            </div>
+          </Field>
+
+          <Field
+            label="Tavily API key"
+            hint="Optional — enables web search. When set, the assistant can search the web for current info."
+          >
+            <div className="flex items-center gap-3">
+              <input
+                type={showTavilyKey ? "text" : "password"}
+                value={tavilyApiKey}
+                onChange={(e) => setTavilyApiKey(e.target.value)}
+                placeholder="(none — web search disabled)"
+                autoComplete="off"
+                spellCheck={false}
+                className="mono w-full border-0 border-b border-line bg-transparent py-2 text-[14px] text-ink outline-none transition-colors focus:border-ink"
+              />
+              <button
+                type="button"
+                onClick={() => setShowTavilyKey((s) => !s)}
+                className="mono shrink-0 text-[11px] tracking-wide text-ink-3 hover:text-ink"
+              >
+                {showTavilyKey ? "hide" : "show"}
+              </button>
+            </div>
+          </Field>
+
+          <Field
+            label="OpenAI API key"
+            hint="Optional — enables voice typing. The mic records a clip and this server transcribes it via OpenAI Whisper, so voice works even when the browser's built-in speech service is blocked. The key never leaves the server."
+          >
+            <div className="flex items-center gap-3">
+              <input
+                type={showOpenaiKey ? "text" : "password"}
+                value={openaiApiKey}
+                onChange={(e) => setOpenaiApiKey(e.target.value)}
+                placeholder="(none — voice uses the browser engine)"
+                autoComplete="off"
+                spellCheck={false}
+                className="mono w-full border-0 border-b border-line bg-transparent py-2 text-[14px] text-ink outline-none transition-colors focus:border-ink"
+              />
+              <button
+                type="button"
+                onClick={() => setShowOpenaiKey((s) => !s)}
+                className="mono shrink-0 text-[11px] tracking-wide text-ink-3 hover:text-ink"
+              >
+                {showOpenaiKey ? "hide" : "show"}
               </button>
             </div>
           </Field>

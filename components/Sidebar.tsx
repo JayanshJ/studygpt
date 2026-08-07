@@ -52,6 +52,13 @@ export function Sidebar({
         <div className="flex items-center gap-3">
           <ThemeToggle />
           <Link
+            href="/decks"
+            aria-label="Flashcard decks"
+            className="mono text-ink-3 transition-colors hover:text-ink"
+          >
+            ▤
+          </Link>
+          <Link
             href="/settings"
             aria-label="Settings"
             className="mono text-ink-3 transition-colors hover:text-ink"

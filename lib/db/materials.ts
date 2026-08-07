@@ -102,3 +102,12 @@ export function listChunkEmbeddingsForProject(projectId: string): {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .all(projectId) as any;
 }
+
+// The chunks of a single material (id + ordinal + text, NO embedding).
+// SP1 reads these to extract concepts per-chunk; the embeddings already
+// exist from ingest time and aren't needed here.
+export function listChunksForMaterial(materialId: string): { id: string; ordinal: number; text: string }[] {
+  return db
+    .prepare("SELECT id, ordinal, text FROM chunks WHERE material_id = ? ORDER BY ordinal ASC")
+    .all(materialId) as { id: string; ordinal: number; text: string }[];
+}
