@@ -41,6 +41,7 @@ type ConceptNodeData = {
   degree: number;
   sourceCount: number;
   selected: boolean;
+  hovered: boolean;
   dimmed: boolean;
 };
 type ConceptRFNode = Node<ConceptNodeData, "concept">;
@@ -53,7 +54,7 @@ function ConceptNode({ data }: NodeProps<ConceptRFNode>) {
   const box = filled
     ? "bg-ink text-paper border-2"
     : "bg-paper text-ink-3 border-2";
-  const border = data.selected ? "border-rule" : filled ? "border-ink" : "border-ink-3";
+  const border = (data.selected || data.hovered) ? "border-rule" : filled ? "border-ink" : "border-ink-3";
   // size via inline style so it scales with degree
   const r = conceptRadius(data.degree);
   return (
@@ -71,6 +72,7 @@ type ClusterNodeData = {
   label: string;
   conceptCount: number;
   selected: boolean;
+  hovered: boolean;
   dimmed: boolean;
 };
 type ClusterRFNode = Node<ClusterNodeData, "cluster">;
@@ -83,7 +85,7 @@ function ClusterNode({ data }: NodeProps<ClusterRFNode>) {
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
       <div
         className={`mono flex h-full w-full flex-col items-center justify-center rounded-[3px] border-2 bg-paper px-2 text-center ${
-          data.selected ? "border-rule" : "border-line"
+          (data.selected || data.hovered) ? "border-rule" : "border-line"
         }`}
       >
         <div className="text-[11px] leading-tight text-ink">{data.label}</div>
@@ -179,6 +181,7 @@ export function ConceptGraph({
     const rfNodes: Node[] = nodeIds.map((id) => {
       const pos = positions.get(id) ?? { x: CANVAS_W / 2, y: CANVAS_H / 2 };
       const selected = id === selectedId;
+      const hovered = id === hoveredId;
       const dimmed = !!focusId && id !== focusId && !(focusNeighbors?.has(id) ?? false);
       if (kind === "overview") {
         const cl = clusters.find((c) => c.id === id);
@@ -186,7 +189,7 @@ export function ConceptGraph({
           id,
           type: "cluster",
           position: pos,
-          data: { label: cl?.name ?? id, conceptCount: cl?.conceptCount ?? 0, selected, dimmed },
+          data: { label: cl?.name ?? id, conceptCount: cl?.conceptCount ?? 0, selected, hovered, dimmed },
         } satisfies Node<ClusterNodeData, "cluster">;
       }
       return {
@@ -198,6 +201,7 @@ export function ConceptGraph({
           degree: degreeById.get(id) ?? 0,
           sourceCount: sourceCountById.get(id) ?? 0,
           selected,
+          hovered,
           dimmed,
         },
       } satisfies Node<ConceptNodeData, "concept">;
@@ -246,7 +250,7 @@ export function ConceptGraph({
       });
 
     return { rfNodes, rfEdges };
-  }, [nodeIds, positions, kind, clusters, labelById, degreeById, sourceCountById, edges, selectedId, focusId, focusNeighbors, hoveredEdgeId]);
+  }, [nodeIds, positions, kind, clusters, labelById, degreeById, sourceCountById, edges, selectedId, focusId, focusNeighbors, hoveredId, hoveredEdgeId]);
 
   const onNodeMouseEnter = useCallback<NodeMouseHandler>((_, node) => setHoveredId(node.id), []);
   const onNodeMouseLeave = useCallback<NodeMouseHandler>(() => setHoveredId(null), []);

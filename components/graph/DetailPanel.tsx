@@ -21,51 +21,35 @@ export function DetailPanel({ conceptId, clusterName, onSelectConcept }: DetailP
     let alive = true;
     // Fetch-on-select: marking loading + clearing stale error before the
     // async call is the canonical pattern; the synchronous setState here is
-    // intentional.
+    // intentional. The last-good `detail` is intentionally kept so the panel
+    // can render a dimmed body during refetch / on fetch failure.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
     fetch(`/api/concepts/${encodeURIComponent(conceptId)}`)
-      .then(async (r) => (r.ok ? ((await r.json()) as ConceptDetail) : null))
+      .then(async (r) => {
+        if (!r.ok) throw new Error("not-found");
+        return (await r.json()) as ConceptDetail;
+      })
       .then((d) => {
         if (!alive) return;
         setDetail(d);
         setLoading(false);
-        if (!d) setError("Concept not found");
+        setError(null);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!alive) return;
-        setError("Could not load concept");
         setLoading(false);
+        setError(err instanceof Error && err.message === "not-found" ? "Concept not found" : "Could not load concept");
       });
     return () => {
       alive = false;
     };
   }, [conceptId]);
 
-  if (!conceptId) {
-    return (
-      <div className="mono rounded-[3px] border border-line bg-paper-2 p-4 text-[12px] text-ink-3">
-        select a concept to see its description, provenance, and neighbors.
-      </div>
-    );
-  }
-  if (loading) {
-    return (
-      <div className="mono rounded-[3px] border border-line bg-paper-2 p-4 text-[12px] text-ink-3">
-        loading…
-      </div>
-    );
-  }
-  if (error || !detail) {
-    return (
-      <div className="mono rounded-[3px] border border-line bg-paper-2 p-4 text-[12px] text-rule">
-        {error ?? "Could not load concept"}
-      </div>
-    );
-  }
-
-  return (
+  // Shared detail body JSX — reused by the normal, dimmed-error, and
+  // dimmed-loading render paths so the markup exists once.
+  const detailBody = detail ? (
     <div className="flex flex-col gap-3 rounded-[3px] border border-line bg-paper-2 p-4">
       <div>
         <div className="text-[15px] text-ink">{detail.concept.label}</div>
@@ -117,5 +101,50 @@ export function DetailPanel({ conceptId, clusterName, onSelectConcept }: DetailP
         )}
       </div>
     </div>
-  );
+  ) : null;
+
+  if (!conceptId) {
+    return (
+      <div className="mono rounded-[3px] border border-line bg-paper-2 p-4 text-[12px] text-ink-3">
+        select a concept to see its description, provenance, and neighbors.
+      </div>
+    );
+  }
+  // Fetch failure with last-good state: show a small error line above the
+  // dimmed prior detail body (spec: keeps last good state dimmed).
+  if (error && detail) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="mono text-[10px] text-rule">{error}</div>
+        <div className="opacity-40">{detailBody}</div>
+      </div>
+    );
+  }
+  // Fetch failure with no prior state: bare error block.
+  if (error && !detail) {
+    return (
+      <div className="mono rounded-[3px] border border-line bg-paper-2 p-4 text-[12px] text-rule">
+        {error}
+      </div>
+    );
+  }
+  // Refetching with last-good state: dim the prior body + small loading line.
+  if (loading && detail) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="mono text-[10px] text-ink-3">loading…</div>
+        <div className="opacity-40">{detailBody}</div>
+      </div>
+    );
+  }
+  // First load with no prior state: standalone loading block.
+  if (loading && !detail) {
+    return (
+      <div className="mono rounded-[3px] border border-line bg-paper-2 p-4 text-[12px] text-ink-3">
+        loading…
+      </div>
+    );
+  }
+  // Normal: freshly loaded detail body.
+  return detailBody;
 }

@@ -29,8 +29,8 @@ export default function GraphPage() {
   // Load project list once.
   useEffect(() => {
     fetch("/api/projects")
-      .then((r) => r.json())
-      .then((ps: Project[]) => setProjects(ps))
+      .then((r) => (r.ok ? r.json() : []))
+      .then((ps: Project[]) => setProjects(Array.isArray(ps) ? ps : []))
       .catch(() => setProjects([]));
   }, []);
 
