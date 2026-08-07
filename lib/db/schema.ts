@@ -161,6 +161,35 @@ export const SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_concept_sources_concept ON concept_sources(concept_id)`,
   `CREATE INDEX IF NOT EXISTS idx_concept_sources_material ON concept_sources(material_id)`,
   `CREATE INDEX IF NOT EXISTS idx_material_extractions_project ON material_extractions(project_id)`,
+  // --- Phase 3: SRS (SP3) ---
+  `CREATE TABLE IF NOT EXISTS card_scheduling (
+    card_id     TEXT PRIMARY KEY,
+    due         INTEGER NOT NULL,
+    stability   REAL    NOT NULL DEFAULT 0,
+    difficulty  REAL    NOT NULL DEFAULT 0,
+    reps        INTEGER NOT NULL DEFAULT 0,
+    lapses      INTEGER NOT NULL DEFAULT 0,
+    state       INTEGER NOT NULL DEFAULT 0,
+    last_review INTEGER,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_card_sched_due ON card_scheduling(due)`,
+  `CREATE TABLE IF NOT EXISTS review_log (
+    id          TEXT PRIMARY KEY,
+    card_id     TEXT NOT NULL,
+    deck_id     TEXT NOT NULL,
+    grade       INTEGER NOT NULL,
+    state       INTEGER NOT NULL,
+    stability   REAL    NOT NULL,
+    difficulty  REAL    NOT NULL,
+    reviewed_at INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
+    FOREIGN KEY (deck_id) REFERENCES decks(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_review_log_card ON review_log(card_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_review_log_deck_time ON review_log(deck_id, reviewed_at)`,
 ] as const;
 
 export type ConversationMode = "chat" | "feynman";
@@ -210,6 +239,7 @@ export interface Deck {
   id: string;
   title: string;
   conversation_id: string | null;
+  daily_new_limit: number;
   created_at: number;
 }
 
@@ -222,6 +252,29 @@ export interface Card {
   back: string;
   ordinal: number;
   created_at: number;
+}
+
+export interface CardScheduling {
+  card_id: string;
+  due: number;
+  stability: number;
+  difficulty: number;
+  reps: number;
+  lapses: number;
+  state: number;
+  last_review: number | null;
+  created_at: number;
+  updated_at: number;
+}
+export interface ReviewLog {
+  id: string;
+  card_id: string;
+  deck_id: string;
+  grade: number;
+  state: number;
+  stability: number;
+  difficulty: number;
+  reviewed_at: number;
 }
 
 export interface Material {

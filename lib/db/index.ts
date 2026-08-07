@@ -42,6 +42,12 @@ function open(): Database.Database {
   if (!msgCols.some((c) => c.name === "kind")) {
     db.exec("ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'");
   }
+  // Additive migration (SP3): per-deck daily new-card cap. Existing decks get
+  // the column default 20 — no backfill needed.
+  const deckCols = db.prepare("PRAGMA table_info(decks)").all() as { name: string }[];
+  if (!deckCols.some((c) => c.name === "daily_new_limit")) {
+    db.exec("ALTER TABLE decks ADD COLUMN daily_new_limit INTEGER NOT NULL DEFAULT 20");
+  }
   // One-time backfill: estimate tokens for rows that predate the column.
   const tokenless = db
     .prepare("SELECT id, content, attachments FROM messages WHERE tokens IS NULL")
@@ -305,5 +311,6 @@ export * from "./projects";
 export * from "./materials";
 export * from "./sources";
 export * from "./decks";
+export * from "./reviews";
 export * from "./concepts";
-export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment, Message, MessageKind, Deck, Card, Concept, ConceptEdge, ConceptSource, MaterialExtraction, MaterialExtractionStatus, EdgeConfidence, ConceptRelation } from "./schema";
+export type { Project, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment, Message, MessageKind, Deck, Card, CardScheduling, ReviewLog, Concept, ConceptEdge, ConceptSource, MaterialExtraction, MaterialExtractionStatus, EdgeConfidence, ConceptRelation } from "./schema";
