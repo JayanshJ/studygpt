@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
-import { deleteDeck, getDeck, getCards, renameDeck } from "@/lib/db";
+import { deleteDeck, getDeck, getDeckWithCards, renameDeck } from "@/lib/db";
 
-// GET /api/decks/[id] — deck + its cards (in order).
+// GET /api/decks/[id] — deck + its cards (in order) with due/new/overview counts.
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const deck = getDeck(id);
-  if (!deck) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ deck, cards: getCards(id) });
+  const payload = getDeckWithCards(id);
+  if (!payload) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(payload);
 }
 
 // PATCH /api/decks/[id] — rename a deck. Body: { title }
