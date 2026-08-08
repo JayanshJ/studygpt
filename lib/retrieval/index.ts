@@ -246,7 +246,7 @@ export async function retrieve(opts: {
 
         const eligibleSelected = eligible
           .filter((s) => selectedMatSet.has(s.c.materialId))
-          .sort((a, b) => b.sim - a.sim);
+          .sort((a, b) => b.score - a.score);
 
         // Inventory of ALL project materials (title + chunk count).
         const inventoryMap = new Map<string, { title: string; count: number }>();
