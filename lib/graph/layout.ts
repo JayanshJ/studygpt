@@ -86,7 +86,22 @@ export function layoutNodes(
         .strength(0.4),
     )
     .force("collide", forceCollide<SimNode>().radius((d) => d.r + 14))
-    .force("center", forceCenter(cx, cy));
+    .force("center", forceCenter(cx, cy))
+    // Keep nodes inside the spread-scaled canvas each tick. Without this, charge
+    // flings weakly-connected outliers far outside the canvas (observed
+    // maxDistFromCentroid ≈ 2200 on a 900×620 view), so @xyflow's fitView must
+    // zoom the whole graph down to ~0.12× to capture them — making a
+    // non-overlapping layout look like a cramped, overlapping blob. Clamping
+    // here keeps the settled bbox ≈ canvas, so fitView renders near 1×.
+    .force("bounds", () => {
+      for (const n of simNodes) {
+        const r = n.r;
+        if (n.x! < r) n.x = r;
+        if (n.x! > w - r) n.x = w - r;
+        if (n.y! < r) n.y = r;
+        if (n.y! > h - r) n.y = h - r;
+      }
+    });
 
   // Synchronous settle: more ticks for larger graphs so they reach equilibrium.
   // Bounded so small graphs settle fast. Run fixed ticks, then stop.
