@@ -16,6 +16,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { layoutNodes, type LayoutNode, type LayoutLink } from "@/lib/graph/layout";
+import { measureConceptNode, layoutCluster, HIERARCHICAL } from "@/lib/graph/dagre-layout";
 import type { GraphConcept, GraphEdge, Cluster } from "@/lib/graph/clusters";
 import type { Band } from "@/lib/mastery/model";
 
@@ -23,9 +24,6 @@ import type { Band } from "@/lib/mastery/model";
 const CANVAS_W = 900;
 const CANVAS_H = 620;
 
-function conceptRadius(degree: number): number {
-  return Math.max(16, Math.min(40, 16 + degree * 1.6));
-}
 function clusterRadius(conceptCount: number): number {
   return Math.max(26, Math.min(70, 26 + conceptCount * 1.4));
 }
@@ -59,7 +57,11 @@ function bandBorder(band: Band): string {
 
 function ConceptNode({ data }: NodeProps<ConceptRFNode>) {
   const filled = data.sourceCount >= 2;
-  const base = `flex items-center justify-center rounded-full text-center transition-opacity ${
+  // Single source of truth for the box dims (also set on the @xyflow Node so
+  // edge endpoints attach without waiting for a DOM measure). MUST match the
+  // CSS: mono 12px, px-2 py-1, border-2 (border-box) — see measureConceptNode.
+  const { width, height } = measureConceptNode(data.label);
+  const base = `flex items-center justify-center transition-opacity ${
     data.dimmed ? "opacity-20" : "opacity-100"
   }`;
   const box = filled
@@ -70,13 +72,14 @@ function ConceptNode({ data }: NodeProps<ConceptRFNode>) {
     ? "border-rule border-[3px]"
     : bandBorderClass;
   const dim = data.band === "unknown" ? "opacity-40" : "";
-  // size via inline style so it scales with degree
-  const r = conceptRadius(data.degree);
   return (
-    <div className={base} style={{ width: r * 2, height: r * 2 }}>
+    <div className={base} style={{ width, height }}>
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
-      <div className={`${box} ${border} ${dim} mono rounded-full px-2 py-1 text-[10px] leading-tight`} style={{ maxWidth: r * 2.4 }}>
+      <div
+        className={`${box} ${border} ${dim} mono px-2 py-1 text-[12px] leading-tight break-all`}
+        style={{ width, height }}
+      >
         {data.label}
       </div>
     </div>
@@ -164,18 +167,22 @@ export function ConceptGraph({
 
   // Layout positions for the active nodes.
   const positions = useMemo(() => {
+    if (kind === "concept") {
+      // dagre hierarchical layout (top→bottom). layoutCluster returns
+      // @xyflow top-left coords already; fall back to canvas center for any
+      // concept missing from the map (defensive — should not happen).
+      return layoutCluster(concepts, edges);
+    }
+    // overview: d3-force (UNCHANGED — replaced in a later task).
     const ln: LayoutNode[] = nodeIds.map((id) => ({
       id,
-      radius:
-        kind === "overview"
-          ? clusterRadius(clusters.find((c) => c.id === id)?.conceptCount ?? 1)
-          : conceptRadius(degreeById.get(id) ?? 0),
+      radius: clusterRadius(clusters.find((c) => c.id === id)?.conceptCount ?? 1),
     }));
     const ll: LayoutLink[] = edges
       .filter((e) => nodeIds.includes(e.source) && nodeIds.includes(e.target) && e.source !== e.target)
       .map((e) => ({ source: e.source, target: e.target }));
     return layoutNodes(ln, ll, CANVAS_W, CANVAS_H);
-  }, [nodeIds, edges, kind, clusters, degreeById]);
+  }, [nodeIds, edges, kind, clusters, concepts]);
 
   // Neighbor set for hover-dim.
   const neighbors = useMemo(() => {
@@ -209,12 +216,16 @@ export function ConceptGraph({
           data: { label: cl?.name ?? id, conceptCount: cl?.conceptCount ?? 0, selected, hovered, dimmed },
         } satisfies Node<ClusterNodeData, "cluster">;
       }
+      const label = labelById.get(id) ?? id;
+      const { width, height } = measureConceptNode(label);
       return {
         id,
         type: "concept",
         position: pos,
+        width,
+        height,
         data: {
-          label: labelById.get(id) ?? id,
+          label,
           degree: degreeById.get(id) ?? 0,
           sourceCount: sourceCountById.get(id) ?? 0,
           band: bandById.get(id) ?? "unknown",
@@ -250,13 +261,24 @@ export function ConceptGraph({
             labelBgPadding: [2, 1] as [number, number],
           };
         }
+        // Concept drill-down: hierarchical edges are the ranking backbone
+        // (straight, solid, full opacity); peer edges are secondary (bezier,
+        // faded; semantically_similar_to dashed). Arrowheads retained on both
+        // for direction.
+        const hierarchical = HIERARCHICAL.has(e.relation);
+        const op = edgeOpacity(e.score) * (hierarchical ? 1 : 0.6) * (dimmed ? 0.25 : 1);
         const dashed = e.relation === "semantically_similar_to";
-        const op = edgeOpacity(e.score) * (dimmed ? 0.25 : 1);
         return {
           id,
           source: e.source,
           target: e.target,
-          style: { stroke: "var(--ink-2)", strokeWidth: 1.5, strokeOpacity: op, strokeDasharray: dashed ? "4 3" : undefined },
+          type: hierarchical ? "straight" : "default",
+          style: {
+            stroke: hierarchical ? "var(--ink-2)" : "var(--ink-3)",
+            strokeWidth: hierarchical ? 1.5 : 1.2,
+            strokeOpacity: op,
+            strokeDasharray: dashed ? "4 3" : undefined,
+          },
           markerEnd: { type: MarkerType.ArrowClosed, color: "var(--ink-2)" },
           // Relation label shown only on the hovered edge (spec: small .mono tag
           // near the midpoint on hover). @xyflow renders edge.label as a pill.
