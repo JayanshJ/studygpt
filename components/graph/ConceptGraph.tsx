@@ -182,10 +182,16 @@ export function ConceptGraph({
   // changed) → full rebuild + fcose randomize:true + fit. Filter toggle or
   // edge reload on the same cluster → edges-only resync + randomize:false
   // (nodes keep their positions) + fit.
+  //
+  // The `cy.nodes().length === 0` guard covers the React strict-mode (dev)
+  // remount race: mount → cleanup (cy.destroy) → re-mount (fresh empty cy).
+  // prevNodeSigRef survives the cleanup, so without the guard the second pass
+  // would take the edges-only path against an empty cy and try to add edges
+  // whose source nodes don't exist yet.
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    const nodesChanged = nodeSig !== prevNodeSigRef.current;
+    const nodesChanged = nodeSig !== prevNodeSigRef.current || cy.nodes().length === 0;
     prevNodeSigRef.current = nodeSig;
 
     if (nodesChanged) {
