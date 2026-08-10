@@ -247,6 +247,8 @@ export default function GraphPage() {
               edges={active.edges}
               selectedId={selectedConceptId}
               onNodeClick={handleNodeClick}
+              showSemSim={false}
+              showAmbiguous={false}
             />
             <DetailPanel
               conceptId={selectedConceptId}
