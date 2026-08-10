@@ -15,18 +15,14 @@ import {
   type NodeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { layoutNodes, type LayoutNode, type LayoutLink } from "@/lib/graph/layout";
 import { measureConceptNode, layoutCluster, HIERARCHICAL } from "@/lib/graph/dagre-layout";
-import type { GraphConcept, GraphEdge, Cluster } from "@/lib/graph/clusters";
+import type { GraphConcept, GraphEdge } from "@/lib/graph/clusters";
 import type { Band } from "@/lib/mastery/model";
 
 // --- visual encoding constants (monochrome Graph Paper tokens) ---
 const CANVAS_W = 900;
 const CANVAS_H = 620;
 
-function clusterRadius(conceptCount: number): number {
-  return Math.max(26, Math.min(70, 26 + conceptCount * 1.4));
-}
 // confidence_score → stroke opacity (AMBIGUOUS faint, EXTRACTED strong).
 function edgeOpacity(score: number | null): number {
   if (score == null) return 0.4;
@@ -86,38 +82,9 @@ function ConceptNode({ data }: NodeProps<ConceptRFNode>) {
   );
 }
 
-type ClusterNodeData = {
-  label: string;
-  conceptCount: number;
-  selected: boolean;
-  hovered: boolean;
-  dimmed: boolean;
-};
-type ClusterRFNode = Node<ClusterNodeData, "cluster">;
-
-function ClusterNode({ data }: NodeProps<ClusterRFNode>) {
-  const r = clusterRadius(data.conceptCount);
-  return (
-    <div className={`transition-opacity ${data.dimmed ? "opacity-30" : "opacity-100"}`} style={{ width: r * 2, height: r * 2 }}>
-      <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
-      <div
-        className={`mono flex h-full w-full flex-col items-center justify-center rounded-[3px] border-2 bg-paper px-2 text-center ${
-          (data.selected || data.hovered) ? "border-rule" : "border-line"
-        }`}
-      >
-        <div className="text-[11px] leading-tight text-ink">{data.label}</div>
-        <div className="mt-0.5 text-[9px] text-ink-3">{data.conceptCount} concepts</div>
-      </div>
-    </div>
-  );
-}
-
-const nodeTypes: NodeTypes = { concept: ConceptNode, cluster: ClusterNode };
+const nodeTypes: NodeTypes = { concept: ConceptNode };
 
 interface ConceptGraphProps {
-  kind: "overview" | "concept";
-  clusters: Cluster[];
   concepts: GraphConcept[];
   edges: GraphEdge[];
   selectedId: string | null;
@@ -125,8 +92,6 @@ interface ConceptGraphProps {
 }
 
 export function ConceptGraph({
-  kind,
-  clusters,
   concepts,
   edges,
   selectedId,
@@ -135,22 +100,8 @@ export function ConceptGraph({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
-  // Active node ids + per-node degree (undirected) for the current view.
+  // Active node ids + per-node degree (undirected) for the current cluster.
   const { nodeIds, degreeById, labelById, sourceCountById, bandById } = useMemo(() => {
-    if (kind === "overview") {
-      const ids = clusters.map((c) => c.id);
-      const deg = new Map<string, number>();
-      const lbl = new Map<string, string>(clusters.map((c) => [c.id, c.name]));
-      const sc = new Map<string, number>();
-      const band = new Map<string, Band>();
-      // inter-cluster edge weight = degree between clusters
-      for (const e of edges) {
-        // edges here are inter-cluster; count per cluster node
-        deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
-        deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
-      }
-      return { nodeIds: ids, degreeById: deg, labelById: lbl, sourceCountById: sc, bandById: band };
-    }
     const ids = concepts.map((c) => c.id);
     const deg = new Map<string, number>(ids.map((id) => [id, 0]));
     const lbl = new Map<string, string>(concepts.map((c) => [c.id, c.label]));
@@ -163,26 +114,12 @@ export function ConceptGraph({
       deg.set(e.target, deg.get(e.target)! + 1);
     }
     return { nodeIds: ids, degreeById: deg, labelById: lbl, sourceCountById: sc, bandById: band };
-  }, [kind, clusters, concepts, edges]);
+  }, [concepts, edges]);
 
-  // Layout positions for the active nodes.
-  const positions = useMemo(() => {
-    if (kind === "concept") {
-      // dagre hierarchical layout (top→bottom). layoutCluster returns
-      // @xyflow top-left coords already; fall back to canvas center for any
-      // concept missing from the map (defensive — should not happen).
-      return layoutCluster(concepts, edges);
-    }
-    // overview: d3-force (UNCHANGED — replaced in a later task).
-    const ln: LayoutNode[] = nodeIds.map((id) => ({
-      id,
-      radius: clusterRadius(clusters.find((c) => c.id === id)?.conceptCount ?? 1),
-    }));
-    const ll: LayoutLink[] = edges
-      .filter((e) => nodeIds.includes(e.source) && nodeIds.includes(e.target) && e.source !== e.target)
-      .map((e) => ({ source: e.source, target: e.target }));
-    return layoutNodes(ln, ll, CANVAS_W, CANVAS_H);
-  }, [nodeIds, edges, kind, clusters, concepts]);
+  // dagre hierarchical layout (top→bottom). layoutCluster returns @xyflow
+  // top-left coords already; fall back to canvas center for any concept missing
+  // from the map (defensive — should not happen).
+  const positions = useMemo(() => layoutCluster(concepts, edges), [concepts, edges]);
 
   // Neighbor set for hover-dim.
   const neighbors = useMemo(() => {
@@ -207,15 +144,6 @@ export function ConceptGraph({
       const selected = id === selectedId;
       const hovered = id === hoveredId;
       const dimmed = !!focusId && id !== focusId && !(focusNeighbors?.has(id) ?? false);
-      if (kind === "overview") {
-        const cl = clusters.find((c) => c.id === id);
-        return {
-          id,
-          type: "cluster",
-          position: pos,
-          data: { label: cl?.name ?? id, conceptCount: cl?.conceptCount ?? 0, selected, hovered, dimmed },
-        } satisfies Node<ClusterNodeData, "cluster">;
-      }
       const label = labelById.get(id) ?? id;
       const { width, height } = measureConceptNode(label);
       return {
@@ -236,35 +164,16 @@ export function ConceptGraph({
       } satisfies Node<ConceptNodeData, "concept">;
     });
 
+    // Concept drill-down: hierarchical edges are the ranking backbone
+    // (straight, solid, full opacity); peer edges are secondary (bezier,
+    // faded; semantically_similar_to dashed). Arrowheads retained on both
+    // for direction.
     const rfEdges: Edge[] = edges
       .filter((e) => nodeIds.includes(e.source) && nodeIds.includes(e.target) && e.source !== e.target)
       .map((e) => {
         const dimmed = !!focusId && e.source !== focusId && e.target !== focusId;
         const id = `${e.source}->${e.target}->${e.relation}`;
         const isHoveredEdge = id === hoveredEdgeId;
-        if (kind === "overview") {
-          // Aggregated inter-cluster edge: stroke width + opacity scale with the
-          // count of concept edges crossing this cluster pair (spec: neutral ink-3).
-          // No dash — aggregation loses per-edge relation meaning.
-          const w = e.weight ?? 1;
-          const sw = 1 + Math.min(w, 6) * 0.6;
-          const op = Math.min(0.8, 0.25 + w * 0.08) * (dimmed ? 0.25 : 1);
-          return {
-            id,
-            source: e.source,
-            target: e.target,
-            style: { stroke: "var(--ink-3)", strokeWidth: sw, strokeOpacity: op },
-            markerEnd: { type: MarkerType.ArrowClosed, color: "var(--ink-3)" },
-            label: isHoveredEdge ? `${w} links` : undefined,
-            labelStyle: { fontFamily: "monospace", fontSize: 10, fill: "var(--ink-2)" },
-            labelBgStyle: { fill: "var(--paper)" },
-            labelBgPadding: [2, 1] as [number, number],
-          };
-        }
-        // Concept drill-down: hierarchical edges are the ranking backbone
-        // (straight, solid, full opacity); peer edges are secondary (bezier,
-        // faded; semantically_similar_to dashed). Arrowheads retained on both
-        // for direction.
         const hierarchical = HIERARCHICAL.has(e.relation);
         const op = edgeOpacity(e.score) * (hierarchical ? 1 : 0.6) * (dimmed ? 0.25 : 1);
         const dashed = e.relation === "semantically_similar_to";
@@ -279,7 +188,7 @@ export function ConceptGraph({
             strokeOpacity: op,
             strokeDasharray: dashed ? "4 3" : undefined,
           },
-          markerEnd: { type: MarkerType.ArrowClosed, color: "var(--ink-2)" },
+          markerEnd: { type: MarkerType.ArrowClosed, color: hierarchical ? "var(--ink-2)" : "var(--ink-3)" },
           // Relation label shown only on the hovered edge (spec: small .mono tag
           // near the midpoint on hover). @xyflow renders edge.label as a pill.
           label: isHoveredEdge ? e.relation : undefined,
@@ -290,7 +199,7 @@ export function ConceptGraph({
       });
 
     return { rfNodes, rfEdges };
-  }, [nodeIds, positions, kind, clusters, labelById, degreeById, sourceCountById, bandById, edges, selectedId, focusId, focusNeighbors, hoveredId, hoveredEdgeId]);
+  }, [nodeIds, positions, labelById, degreeById, sourceCountById, bandById, edges, selectedId, focusId, focusNeighbors, hoveredId, hoveredEdgeId]);
 
   const onNodeMouseEnter = useCallback<NodeMouseHandler>((_, node) => setHoveredId(node.id), []);
   const onNodeMouseLeave = useCallback<NodeMouseHandler>(() => setHoveredId(null), []);

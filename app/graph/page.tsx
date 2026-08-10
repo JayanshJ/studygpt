@@ -11,7 +11,12 @@ import {
   type GraphConcept,
   type GraphEdge,
 } from "@/lib/graph/clusters";
+import {
+  masteryByCluster,
+  externalLinkCountByCluster,
+} from "@/lib/graph/cluster-stats";
 import { ConceptGraph } from "@/components/graph/ConceptGraph";
+import { ClusterOverview } from "@/components/graph/ClusterOverview";
 import { DetailPanel } from "@/components/graph/DetailPanel";
 
 type View = { kind: "overview" } | { kind: "cluster"; clusterId: string };
@@ -72,30 +77,48 @@ export default function GraphPage() {
   const c2cluster = useMemo(() => conceptClusterMap(clusters), [clusters]);
   const clusterById = useMemo(() => new Map(clusters.map((c) => [c.id, c])), [clusters]);
 
-  // Active-view edges + concept set passed to ConceptGraph.
+  // Active-view concept + edge sets. Only the cluster drill-down branch
+  // produces data; the overview renders ClusterOverview directly from the
+  // dedicated memos below, so `active` is unused when view.kind === "overview".
   const active = useMemo(() => {
-    if (!data) return { kind: "overview" as const, clusters: [] as Cluster[], concepts: [] as GraphConcept[], edges: [] as GraphEdge[] };
-    if (view.kind === "overview") {
-      // Inter-cluster edges: aggregate concept edges whose endpoints map to different clusters.
-      const pair = new Map<string, GraphEdge & { weight: number }>();
-      for (const e of data.edges) {
-        const a = c2cluster.get(e.source);
-        const b = c2cluster.get(e.target);
-        if (!a || !b || a === b) continue;
-        const [src, tgt] = a < b ? [a, b] : [b, a];
-        const key = `${src}|${tgt}`;
-        const prev = pair.get(key);
-        if (prev) prev.weight += 1;
-        else pair.set(key, { source: src, target: tgt, relation: e.relation, confidence: e.confidence, score: e.score, weight: 1 });
-      }
-      return { kind: "overview" as const, clusters, concepts: [] as GraphConcept[], edges: [...pair.values()] };
+    if (!data || view.kind !== "cluster") {
+      return { kind: "overview" as const, concepts: [] as GraphConcept[], edges: [] as GraphEdge[] };
     }
     const cl = clusterById.get(view.clusterId);
     const memberSet = new Set(cl?.conceptIds ?? []);
     const concepts = data.concepts.filter((c) => memberSet.has(c.id));
     const edges = data.edges.filter((e) => memberSet.has(e.source) && memberSet.has(e.target));
-    return { kind: "concept" as const, clusters, concepts, edges };
-  }, [data, view, clusters, c2cluster, clusterById]);
+    return { kind: "concept" as const, concepts, edges };
+  }, [data, view, clusterById]);
+
+  // Per-cluster stats feeding ClusterOverview. Computed once per data change
+  // (independent of the current view) so switching to the overview is instant.
+  const masteryByClusterMap = useMemo(
+    () => (data ? masteryByCluster(clusters, data.concepts, c2cluster) : new Map()),
+    [data, clusters, c2cluster],
+  );
+  const externalLinksMap = useMemo(
+    () => (data ? externalLinkCountByCluster(clusters, data.edges, c2cluster) : new Map()),
+    [data, clusters, c2cluster],
+  );
+  // Undirected degree per concept. clusters.ts keeps `degreeMap` internal, so
+  // recompute it here (the protected clusters.ts module is left untouched).
+  const degreeMapById = useMemo(() => {
+    if (!data) return new Map<string, number>();
+    const deg = new Map<string, number>();
+    for (const c of data.concepts) deg.set(c.id, 0);
+    for (const e of data.edges) {
+      if (e.source === e.target) continue;
+      if (!deg.has(e.source) || !deg.has(e.target)) continue;
+      deg.set(e.source, deg.get(e.source)! + 1);
+      deg.set(e.target, deg.get(e.target)! + 1);
+    }
+    return deg;
+  }, [data]);
+  const labelById = useMemo(
+    () => (data ? new Map(data.concepts.map((c) => [c.id, c.label])) : new Map()),
+    [data],
+  );
 
   const selectedClusterName = useMemo(() => {
     if (view.kind !== "cluster") return null;
@@ -103,12 +126,7 @@ export default function GraphPage() {
   }, [view, clusterById]);
 
   function handleNodeClick(id: string) {
-    if (view.kind === "overview") {
-      setView({ kind: "cluster", clusterId: id });
-      setSelectedConceptId(null);
-    } else {
-      setSelectedConceptId(id);
-    }
+    setSelectedConceptId(id);
   }
 
   function handleSearch(e: React.FormEvent) {
@@ -203,11 +221,28 @@ export default function GraphPage() {
               build one on /projects
             </Link>
           </div>
+        ) : view.kind === "overview" ? (
+          <div className="grid gap-6 md:grid-cols-[1fr_300px]">
+            <ClusterOverview
+              clusters={clusters}
+              masteryByCluster={masteryByClusterMap}
+              externalLinksByCluster={externalLinksMap}
+              degreeMap={degreeMapById}
+              labelById={labelById}
+              onSelectCluster={(id) => {
+                setView({ kind: "cluster", clusterId: id });
+                setSelectedConceptId(null);
+              }}
+            />
+            <DetailPanel
+              conceptId={selectedConceptId}
+              clusterName={selectedClusterName}
+              onSelectConcept={setSelectedConceptId}
+            />
+          </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-[1fr_300px]">
             <ConceptGraph
-              kind={active.kind}
-              clusters={active.clusters}
               concepts={active.concepts}
               edges={active.edges}
               selectedId={selectedConceptId}
