@@ -549,6 +549,7 @@ export default function Page() {
               activeProjectId={activeProjectId}
               onProjectChange={setActiveProjectId}
               loading={convLoading}
+              collapsible={false}
             />
           </div>
         </>
