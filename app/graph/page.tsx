@@ -18,6 +18,7 @@ import {
 import { ConceptGraph } from "@/components/graph/ConceptGraph";
 import { ClusterOverview } from "@/components/graph/ClusterOverview";
 import { DetailPanel } from "@/components/graph/DetailPanel";
+import { filterEdges } from "@/lib/graph/relations";
 
 type View = { kind: "overview" } | { kind: "cluster"; clusterId: string };
 
@@ -30,6 +31,10 @@ export default function GraphPage() {
   const [view, setView] = useState<View>({ kind: "overview" });
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  // Edge-filter toggles for the drill-down (off by default → hide the noisy
+  // inferred-similarity + AMBIGUOUS edges). Reset when switching projects.
+  const [showSemSim, setShowSemSim] = useState(false);
+  const [showAmbiguous, setShowAmbiguous] = useState(false);
 
   // Load project list once.
   useEffect(() => {
@@ -52,6 +57,8 @@ export default function GraphPage() {
     setLoadError(null);
     setView({ kind: "overview" });
     setSelectedConceptId(null);
+    setShowSemSim(false);
+    setShowAmbiguous(false);
     try {
       const res = await fetch(`/api/concepts?projectId=${encodeURIComponent(id)}`);
       if (res.ok) setData(await res.json());
@@ -90,6 +97,13 @@ export default function GraphPage() {
     const edges = data.edges.filter((e) => memberSet.has(e.source) && memberSet.has(e.target));
     return { kind: "concept" as const, concepts, edges };
   }, [data, view, clusterById]);
+
+  // Edges visible in the current drill-down after the filter (for the
+  // "showing N of M edges" caption). Only meaningful in the cluster view.
+  const visibleEdgeCount = useMemo(
+    () => (active.kind === "concept" ? filterEdges(active.edges, { showSemSim, showAmbiguous }).length : 0),
+    [active, showSemSim, showAmbiguous],
+  );
 
   // Per-cluster stats feeding ClusterOverview. Computed once per data change
   // (independent of the current view) so switching to the overview is instant.
@@ -205,6 +219,32 @@ export default function GraphPage() {
               {data.concepts.length} concepts · {data.edges.length} edges · {clusters.length} clusters
             </span>
           )}
+
+          {view.kind === "cluster" && (
+            <div className="flex items-center gap-3">
+              <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
+                <input
+                  type="checkbox"
+                  checked={showSemSim}
+                  onChange={(e) => setShowSemSim(e.target.checked)}
+                  className="h-3 w-3 accent-ink"
+                />
+                show similar
+              </label>
+              <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
+                <input
+                  type="checkbox"
+                  checked={showAmbiguous}
+                  onChange={(e) => setShowAmbiguous(e.target.checked)}
+                  className="h-3 w-3 accent-ink"
+                />
+                show ambiguous
+              </label>
+              <span className="mono text-[11px] text-ink-3">
+                showing {visibleEdgeCount} of {active.kind === "concept" ? active.edges.length : 0} edges
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Body: graph + detail panel */}
@@ -247,8 +287,8 @@ export default function GraphPage() {
               edges={active.edges}
               selectedId={selectedConceptId}
               onNodeClick={handleNodeClick}
-              showSemSim={false}
-              showAmbiguous={false}
+              showSemSim={showSemSim}
+              showAmbiguous={showAmbiguous}
             />
             <DetailPanel
               conceptId={selectedConceptId}
