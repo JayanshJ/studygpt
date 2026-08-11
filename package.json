@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:fsrs": "node --import tsx --test lib/fsrs/algorithm.test.ts",
     "test:mastery": "node --import tsx --test lib/mastery/model.test.ts",
-    "test:retrieval": "node --import tsx --test lib/retrieval/index.test.ts"
+    "test:retrieval": "node --import tsx --test lib/retrieval/index.test.ts",
+    "test:learning-path": "node --import tsx --test lib/graph/learning-path.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.23",
