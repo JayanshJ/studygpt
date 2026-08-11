@@ -19,13 +19,15 @@ import type { StylesheetJson } from "cytoscape";
 export interface GraphTokens {
   paper: string; // unfilled node background
   paper2: string; // canvas / filled-node label background
-  ink: string; // filled node background, learning band border
+  ink: string; // filled node background
   ink2: string; // secondary text, hierarchical edges
   ink3: string; // faint captions, peer edges, untested/unknown border
-  rule: string; // red notebook rule, slipping band, selection
+  rule: string; // red notebook rule, selection
   feynman: string; // chalk blue, strong band
   line: string; // hairlines
   mono: string; // resolved mono font stack for canvas text
+  amber: string; // learning band border
+  rose: string; // slipping band border
 }
 
 function readVar(name: string, fallback: string): string {
@@ -47,6 +49,8 @@ export function readGraphTokens(): GraphTokens {
     feynman: readVar("--feynman", "#2e5c8a"),
     line: readVar("--line", "#d7d5c8"),
     mono: readVar("--font-mono", "ui-monospace, monospace"),
+    amber: readVar("--amber", "#c08a00"),
+    rose: readVar("--rose", "#c0445a"),
   };
 }
 
@@ -56,7 +60,7 @@ export function readGraphTokens(): GraphTokens {
 type StyleBlock = { selector: string; style: Record<string, string | number> };
 
 // Build the monochrome, band-aware Cytoscape stylesheet from resolved tokens.
-// Encodes mastery band borders (strong=feynman, learning=ink, slipping=rule,
+// Encodes mastery band borders (strong=feynman, learning=amber, slipping=rose,
 // untested/unknown=ink-3), filled-vs-unfilled nodes (sourceCount>=2), the
 // hierarchical-vs-peer edge split, dashed sem-sim edges, and hover/selection
 // emphasis. Per-element `classes` set at build time drive the selectors here.
@@ -87,8 +91,8 @@ export function buildCytoscapeStyle(t: GraphTokens): StylesheetJson {
     { selector: "node.filled", style: { "background-color": t.ink, color: t.paper2 } },
     // Mastery band borders.
     { selector: "node.band-strong", style: { "border-color": t.feynman } },
-    { selector: "node.band-learning", style: { "border-color": t.ink } },
-    { selector: "node.band-slipping", style: { "border-color": t.rule } },
+    { selector: "node.band-learning", style: { "border-color": t.amber } },
+    { selector: "node.band-slipping", style: { "border-color": t.rose } },
     { selector: "node.band-untested", style: { "border-color": t.ink3 } },
     { selector: "node.band-unknown", style: { "border-color": t.ink3, opacity: 0.45 } },
     // --- Learning-path status (applied in-place via class toggles) ----------
