@@ -2,7 +2,7 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/cn";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "accent" | "danger";
 type Size = "sm" | "md" | "icon";
 
 const variants: Record<Variant, string> = {
@@ -13,8 +13,10 @@ const variants: Record<Variant, string> = {
     "border border-border bg-surface text-content hover:bg-surface-2 hover:border-border-strong focus-visible:ring-ring",
   ghost:
     "bg-transparent text-content-muted hover:bg-surface-2 hover:text-content focus-visible:ring-ring",
+  accent:
+    "bg-rule text-white hover:opacity-90 active:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-ring-accent focus-visible:ring-offset-paper",
   danger:
-    "bg-rule text-paper-2 hover:opacity-90 active:opacity-100 focus-visible:ring-ring-accent",
+    "bg-danger text-white hover:opacity-90 active:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-ring focus-visible:ring-offset-paper",
 };
 
 const sizes: Record<Size, string> = {
