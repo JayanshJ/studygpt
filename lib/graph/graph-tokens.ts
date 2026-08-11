@@ -91,6 +91,17 @@ export function buildCytoscapeStyle(t: GraphTokens): StylesheetJson {
     { selector: "node.band-slipping", style: { "border-color": t.rule } },
     { selector: "node.band-untested", style: { "border-color": t.ink3 } },
     { selector: "node.band-unknown", style: { "border-color": t.ink3, opacity: 0.45 } },
+    // --- Learning-path status (applied in-place via class toggles) ----------
+    // Path mode only. Status overrides band border. Order: after band, before
+    // selected/hovered so selection still wins; dimmed (hover) is later still.
+    // ready: accent rule border, thicker, raised — the "this is next" signal.
+    { selector: "node.status-ready", style: { "border-color": t.rule, "border-width": 3, "z-index": 50 } },
+    // locked: dashed faint border, muted — prereqs not met.
+    { selector: "node.status-locked", style: { "border-color": t.ink3, "border-style": "dashed", opacity: 0.4 } },
+    // mastered: strong feynman border, thicker — "done".
+    { selector: "node.status-mastered", style: { "border-color": t.feynman, "border-width": 3 } },
+    // (in_progress has no status class — the existing learning/slipping band
+    //  border already signals "active".)
     // Selection + hover emphasis (rule border, thicker).
     {
       selector: "node:selected, node.hovered",
@@ -124,6 +135,12 @@ export function buildCytoscapeStyle(t: GraphTokens): StylesheetJson {
         "target-arrow-color": t.ink2,
       },
     },
+    // --- Learning-path edge emphasis (path mode only) ----------------------
+    // Backbone: prerequisite_of edges read through (strong, opaque). Applied
+    // to hierarchical edges in path mode via a `path-backbone` class.
+    { selector: "edge.path-backbone", style: { width: 2.2, "line-color": t.ink, "line-opacity": 1, "target-arrow-color": t.ink } },
+    // Peer edges fade further in path mode so the DAG reads through.
+    { selector: "edge.path-faded", style: { "line-opacity": 0.12 } },
     // semantically_similar_to: dashed.
     { selector: "edge.sem-sim", style: { "line-style": "dashed" } },
     // Edge hover: reveal the relation label in a small mono tag.
