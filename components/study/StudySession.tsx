@@ -1,15 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { RotateCw, Check } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { useMotion, cardFlip, fadeUp } from "@/lib/motion";
+import { cn } from "@/lib/cn";
 import type { CardDue } from "@/lib/db/reviews";
 import type { Band } from "@/lib/mastery/model";
 
 type Grade = 1 | 2 | 3 | 4;
 
-// Band → Graph Paper border token for the flip-card. Slipping cards get the
-// rule (red) accent, strong cards the feynman (green) accent, learning cards
-// the ink accent, and untested/unknown/undefined fall back to the line border.
+// Band → border token for the flip-card. Slipping → rule, strong → feynman,
+// learning → ink, untested/unknown/undefined → the default border.
 function bandBorder(band?: Band): string {
   switch (band) {
     case "slipping":
@@ -19,15 +24,15 @@ function bandBorder(band?: Band): string {
     case "learning":
       return "border-ink";
     default:
-      return "border-line"; // untested + unknown
+      return "border-border"; // untested + unknown
   }
 }
 
 const GRADE_BUTTONS: { grade: Grade; label: string; cls: string }[] = [
-  { grade: 1, label: "Again", cls: "border-rule text-rule" },
-  { grade: 2, label: "Hard", cls: "border-ink-3 text-ink-3" },
-  { grade: 3, label: "Good", cls: "border-ink text-ink" },
-  { grade: 4, label: "Easy", cls: "border-ink-2 text-ink-2" },
+  { grade: 1, label: "Again", cls: "border-rule text-rule hover:bg-rule/10" },
+  { grade: 2, label: "Hard", cls: "border-border text-content-faint hover:bg-surface-2" },
+  { grade: 3, label: "Good", cls: "border-ink text-ink hover:bg-ink/10" },
+  { grade: 4, label: "Easy", cls: "border-feynman text-feynman hover:bg-feynman/10" },
 ];
 
 // Shared review session: flip a card, grade it (Again/Hard/Good/Easy), POST the
@@ -54,6 +59,7 @@ export function StudySession({
   const [reviewed, setReviewed] = useState(0);
   const [againCount, setAgainCount] = useState(0);
   const [reshown, setReshown] = useState<Set<string>>(new Set());
+  const m = useMotion();
 
   const current = remaining[0] ?? null;
   const total = queue.length;
@@ -107,20 +113,20 @@ export function StudySession({
 
   if (done) {
     return (
-      <div className="rounded-[3px] border border-line bg-paper-2 p-6">
-        <div className="mono text-[11px] tracking-wide text-ink-3">session complete</div>
-        <div className="mt-3 text-[1.2rem] text-ink">
-          {reviewed} reviewed · <span className="text-rule">{againCount} again</span>
-        </div>
-        {onComplete && (
-          <button
-            onClick={onComplete}
-            className="mono mt-6 rounded-[3px] border border-line bg-paper px-3 py-1.5 text-[12px] tracking-wide text-ink transition-colors hover:bg-paper-3"
-          >
-            done
-          </button>
-        )}
-      </div>
+      <motion.div {...m} variants={fadeUp}>
+        <Card accent className="p-6 pl-7">
+          <div className="mono text-[11px] tracking-wide text-content-faint">session complete</div>
+          <div className="mt-3 text-[1.2rem] text-ink">
+            {reviewed} reviewed · <span className="text-rule">{againCount} again</span>
+          </div>
+          {onComplete && (
+            <Button variant="secondary" size="sm" className="mt-6" onClick={onComplete}>
+              <Check size={14} />
+              done
+            </Button>
+          )}
+        </Card>
+      </motion.div>
     );
   }
 
@@ -130,32 +136,45 @@ export function StudySession({
 
   return (
     <div>
-      <div className="mono mb-4 flex items-center justify-between text-[12px] tracking-wide tabular-nums text-ink-3">
+      <div className="mono mb-4 flex items-center justify-between text-[12px] tracking-wide tabular-nums text-content-faint">
         <span>
           {deckLabel ? `${deckLabel} · ` : ""}
           {total - remaining.length + 1} / {total}
         </span>
-        {current.state === 0 && <span className="text-ink-3">new</span>}
+        {current.state === 0 && <span className="text-content-faint">new</span>}
       </div>
 
       {error && <div className="mono mb-3 text-[11px] text-rule">{error}</div>}
 
       {/* Cross-deck card badge: shown only in cross-deck mode (no per-deck label). */}
       {!deckLabel && current.deckTitle && (
-        <div className="mono mb-2 text-[10px] tracking-wide text-ink-3">{current.deckTitle}</div>
+        <div className="mono mb-2 text-[10px] tracking-wide text-content-faint">{current.deckTitle}</div>
       )}
 
-      {/* Card */}
+      {/* Card — click to flip. A button so it's keyboard-activatable; the face
+          re-enters with a rotateY flip impression keyed on `flipped`. */}
       <button
         onClick={() => setFlipped((f) => !f)}
-        className={`block w-full rounded-[3px] border bg-paper p-6 text-left transition-colors hover:border-ink-3 ${bandClass}`}
+        className={cn(
+          "block w-full rounded-[4px] border bg-surface p-6 text-left shadow-card transition-[border-color] duration-fast ease-out hover:border-border-strong",
+          bandClass,
+        )}
+        style={{ perspective: 1000 }}
       >
-        <div className="mono mb-3 text-[10px] tracking-wide text-ink-3">
+        <div className="mono mb-3 flex items-center gap-1.5 text-[10px] tracking-wide text-content-faint">
+          <RotateCw size={11} />
           {flipped ? "back" : "front"} · click to flip{current.band ? ` · ${current.band}` : ""}
         </div>
-        <div className="text-[1rem] leading-relaxed text-ink">
-          <Markdown content={flipped ? current.back : current.front} />
-        </div>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={flipped ? `${current.id}-back` : `${current.id}-front`}
+            {...m}
+            variants={cardFlip}
+            className="text-[1rem] leading-relaxed text-ink"
+          >
+            <Markdown content={flipped ? current.back : current.front} />
+          </motion.div>
+        </AnimatePresence>
       </button>
 
       {/* Grade buttons (enabled after flipping) */}
@@ -165,9 +184,11 @@ export function StudySession({
             key={b.grade}
             disabled={!flipped || submitting}
             onClick={() => handleGrade(b.grade)}
-            className={`mono rounded-[3px] border bg-paper px-2 py-2 text-[12px] tracking-wide transition-opacity ${b.cls} ${
-              !flipped || submitting ? "opacity-30" : "hover:bg-paper-3"
-            }`}
+            className={cn(
+              "mono rounded-[3px] border bg-surface px-2 py-2 text-[12px] tracking-wide transition-[opacity,background-color] duration-fast ease-out",
+              b.cls,
+              !flipped || submitting ? "opacity-30" : "",
+            )}
           >
             {b.label}
           </button>

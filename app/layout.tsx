@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
-import { Newsreader, JetBrains_Mono } from "next/font/google";
+import { Inter, Newsreader, JetBrains_Mono } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import { ThemeScript } from "./ThemeScript";
+
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
 
 const newsreader = Newsreader({
   variable: "--font-newsreader",
@@ -31,7 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       // doesn't have. suppressHydrationWarning is the standard fix for this
       // pattern (same approach next-themes uses).
       suppressHydrationWarning
-      className={`${newsreader.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${newsreader.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-paper text-ink">
         {/* Emits the theme-init script into the SSR stream via

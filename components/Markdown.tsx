@@ -37,7 +37,8 @@ function PreBlock({
   if (lang === "artifact") {
     if (streaming) {
       return (
-        <div className="mono my-2 rounded-[3px] border border-line bg-paper-2 px-4 py-3 text-[12px] text-ink-3">
+        <div className="mono my-2 flex items-center gap-1.5 rounded-[3px] border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint">
+          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-feynman" />
           building visualization…
         </div>
       );
@@ -47,7 +48,8 @@ function PreBlock({
   if (lang === "flashcard") {
     if (streaming) {
       return (
-        <div className="mono my-2 rounded-[3px] border border-line bg-paper-2 px-4 py-3 text-[12px] text-ink-3">
+        <div className="mono my-2 flex items-center gap-1.5 rounded-[3px] border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint">
+          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-feynman" />
           building flashcards…
         </div>
       );

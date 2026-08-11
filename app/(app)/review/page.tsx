@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { RotateCw } from "lucide-react";
 import { StudySession } from "@/components/study/StudySession";
-import { Skeleton } from "@/components/Skeleton";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { Card } from "@/components/ui/Card";
+import { motion } from "motion/react";
+import { useMotion, fadeUp } from "@/lib/motion";
 import type { CardDue } from "@/lib/db/reviews";
 
 type DeckCount = { deckId: string; title: string; due: number; new: number };
@@ -12,6 +15,7 @@ export default function ReviewPage() {
   const [decks, setDecks] = useState<DeckCount[] | null>(null);
   const [queue, setQueue] = useState<CardDue[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const m = useMotion();
 
   useEffect(() => {
     fetch("/api/review/due")
@@ -37,32 +41,35 @@ export default function ReviewPage() {
   };
 
   return (
-    <div className="graph-paper min-h-screen">
-      <div className="mx-auto max-w-3xl px-6 py-10">
-        <div className="mb-6 flex items-center justify-between">
-          <Link href="/" className="mono text-[12px] tracking-wide text-ink-3 transition-colors hover:text-ink">
-            ← Back
-          </Link>
-          <span className="mono flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
-            <span className="h-1.5 w-1.5 rounded-full bg-rule" />
-            Review
-          </span>
-        </div>
+    <div className="graph-paper h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl px-4 py-6 tab:px-6 tab:py-10">
+        <motion.div {...m} variants={fadeUp} className="mb-5 flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
+          <RotateCw size={16} className="text-rule" />
+          Review
+        </motion.div>
 
         {loading ? (
           <Skeleton className="h-8 w-1/2" />
         ) : (
           <>
-            <h1 className="mb-2 text-[1.6rem] leading-tight text-ink">Review queue</h1>
-            <p className="mono mb-6 text-[11px] tracking-wide text-ink-3">{totalDue} card{totalDue === 1 ? "" : "s"} due across all decks</p>
+            <motion.h1 {...m} variants={fadeUp} className="mb-2 font-serif text-[1.6rem] leading-tight text-ink">
+              Review queue
+            </motion.h1>
+            <p className="mono mb-6 text-[11px] tracking-wide text-content-faint">
+              {totalDue} card{totalDue === 1 ? "" : "s"} due across all decks
+            </p>
 
             {decks && decks.length > 0 && (
               <ul className="mb-6 space-y-1">
                 {decks.map((d) => (
-                  <li key={d.deckId} className="mono flex items-center justify-between rounded-[3px] border border-line bg-paper px-3 py-2 text-[12px]">
-                    <Link href={`/decks/${d.deckId}`} className="text-ink hover:underline">{d.title}</Link>
-                    <span className="tabular-nums text-ink-3">{d.due} due · {d.new} new</span>
-                  </li>
+                  <motion.li key={d.deckId} {...m} variants={fadeUp}>
+                    <Card className="mono flex items-center justify-between p-3 text-[12px]">
+                      <a href={`/decks/${d.deckId}`} className="text-ink hover:underline">{d.title}</a>
+                      <span className="tabular-nums text-content-faint">
+                        {d.due} due · {d.new} new
+                      </span>
+                    </Card>
+                  </motion.li>
                 ))}
               </ul>
             )}
@@ -70,9 +77,9 @@ export default function ReviewPage() {
             {queue && queue.length > 0 ? (
               <StudySession queue={queue} onComplete={reload} />
             ) : (
-              <div className="rounded-[3px] border border-line bg-paper-2 p-6 text-center mono text-[12px] text-ink-3">
-                nothing due — come back later
-              </div>
+              <Card className="p-6 text-center">
+                <p className="mono text-[12px] text-content-faint">nothing due — come back later</p>
+              </Card>
             )}
           </>
         )}

@@ -46,3 +46,6 @@ next-env.d.ts
 # tesseract.js OCR language data cache
 *.traineddata
 tesseract-*.cache
+
+# superpowers (SDD ledger + brainstorming mockups — local scratch)
+/.superpowers/

@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { PrintButton } from "@/components/PrintButton";
-import { Skeleton } from "@/components/Skeleton";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 interface Doc {
   content: string;
@@ -35,13 +36,13 @@ export default function PrintPage() {
   if (err) return <div className="mono p-8 text-sm text-rule">{err}</div>;
   if (!doc) {
     return (
-      <div className="min-h-screen bg-paper-2">
+      <div className="min-h-screen bg-surface-2">
         <div className="no-print mx-auto flex max-w-[760px] items-center justify-between px-6 py-6">
           <Link
             href="/"
-            className="mono text-[12px] tracking-wide text-ink-3 transition-colors hover:text-ink"
+            className="mono flex items-center gap-1 text-[12px] tracking-wide text-content-faint transition-colors hover:text-ink"
           >
-            ← back to chat
+            <ArrowLeft size={13} /> back to chat
           </Link>
         </div>
         <article className="mx-auto max-w-[760px] px-2 py-6">
@@ -59,10 +60,10 @@ export default function PrintPage() {
   }
 
   return (
-    <div className="min-h-screen bg-paper-2">
+    <div className="min-h-screen bg-surface-2">
       <div className="no-print mx-auto flex max-w-[760px] items-center justify-between px-6 py-6">
-        <Link href="/" className="mono text-[12px] tracking-wide text-ink-3 transition-colors hover:text-ink">
-          ← back to chat
+        <Link href="/" className="mono flex items-center gap-1 text-[12px] tracking-wide text-content-faint transition-colors hover:text-ink">
+          <ArrowLeft size={13} /> back to chat
         </Link>
         <PrintButton />
       </div>

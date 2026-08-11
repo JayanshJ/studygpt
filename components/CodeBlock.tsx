@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { Copy, Check } from "lucide-react";
 import { extractText } from "@/lib/markdown/extract-text";
 
 interface PreProps {
@@ -22,13 +23,13 @@ export function CodeBlock({ children }: PreProps) {
   }
 
   return (
-    <div className="relative">
+    <div className="group/code relative">
       <button
         onClick={copy}
         aria-label="Copy code"
-        className="no-print mono absolute right-2 top-2 z-10 rounded-[2px] border border-line bg-paper-2 px-1.5 py-0.5 text-[10px] tracking-wide text-ink-3 opacity-0 transition-opacity hover:text-ink group-hover:opacity-100"
+        className="no-print absolute right-2 top-2 z-10 inline-flex h-6 w-6 items-center justify-center rounded-[3px] text-content-faint opacity-0 transition-opacity hover:bg-surface-2 hover:text-content group-hover/code:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring outline-none"
       >
-        {copied ? "copied" : "copy"}
+        {copied ? <Check size={13} /> : <Copy size={13} />}
       </button>
       <pre>{children}</pre>
     </div>

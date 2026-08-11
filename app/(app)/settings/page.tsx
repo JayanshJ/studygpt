@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Skeleton } from "@/components/Skeleton";
+import { toast } from "sonner";
+import { Settings as SettingsIcon, Eye, EyeOff, Check } from "lucide-react";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
+import { motion } from "motion/react";
+import { useMotion, fadeUp } from "@/lib/motion";
 
 interface Config {
   provider: string;
@@ -24,8 +30,8 @@ export default function SettingsPage() {
   const [showKey, setShowKey] = useState(false);
   const [showTavilyKey, setShowTavilyKey] = useState(false);
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const m = useMotion();
 
   useEffect(() => {
     fetch("/api/settings")
@@ -43,7 +49,6 @@ export default function SettingsPage() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    setSaved(false);
     setError(null);
     const res = await fetch("/api/settings", {
       method: "PATCH",
@@ -51,21 +56,22 @@ export default function SettingsPage() {
       body: JSON.stringify({ provider: "ollama", model, baseUrl, apiKey, tavilyApiKey, openaiApiKey }),
     });
     if (res.ok) {
-      setSaved(true);
       setConfig(await res.json());
+      toast.success("Settings saved", { description: "Changes apply to new conversations." });
     } else {
       setError("Save failed.");
+      toast.error("Save failed", { description: "Could not write settings to the server." });
     }
   }
 
   if (!config) {
     return (
-      <div className="graph-paper min-h-screen">
-        <div className="mx-auto max-w-xl px-6 py-14">
+      <div className="graph-paper h-full overflow-y-auto">
+        <div className="mx-auto max-w-xl px-4 py-14 tab:px-6">
           <p className="mono mb-2 text-[11px] tracking-[0.2em] text-rule">SETTINGS</p>
           <Skeleton className="h-7 w-64" />
           <Skeleton className="mt-3 h-4 w-full max-w-md" />
-          <div className="mt-7 flex items-baseline gap-3 border-y border-line py-3">
+          <div className="mt-7 flex items-baseline gap-3 border-y border-border py-3">
             <Skeleton className="h-3.5 w-28" />
             <Skeleton className="h-4 w-24" />
           </div>
@@ -83,59 +89,57 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="graph-paper min-h-screen">
-      <div className="mx-auto max-w-xl px-6 py-14">
-        <p className="mono mb-2 text-[11px] tracking-[0.2em] text-rule">
-          SETTINGS
-        </p>
-        <h1 className="text-[1.6rem] leading-tight text-ink">Model &amp; connection</h1>
-        <p className="mt-2 text-[15px] text-ink-2">
+    <div className="graph-paper h-full overflow-y-auto">
+      <div className="mx-auto max-w-xl px-4 py-10 tab:px-6 tab:py-14">
+        <motion.div {...m} variants={fadeUp} className="mb-5 flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
+          <SettingsIcon size={16} className="text-rule" />
+          Settings
+        </motion.div>
+
+        <motion.h1 {...m} variants={fadeUp} className="font-serif text-[1.6rem] leading-tight text-ink">
+          Model &amp; connection
+        </motion.h1>
+        <motion.p {...m} variants={fadeUp} className="mt-2 text-[15px] text-content-muted">
           These control how StudyGPT talks to the model. Changes apply to new
           conversations. The provider layer is swappable — today only Ollama is
           wired, but adding Claude or GPT later is one file plus a switch here.
-        </p>
+        </motion.p>
 
-        <div className="mt-7 flex items-baseline gap-3 border-y border-line py-3">
-          <span className="mono text-[11px] tracking-[0.18em] text-ink-3">
+        <motion.div {...m} variants={fadeUp} className="mt-7 flex items-baseline gap-3 border-y border-border py-3">
+          <span className="mono text-[11px] tracking-[0.18em] text-content-faint">
             TOTAL TOKENS
           </span>
           <span className="mono text-[15px] text-ink">
             {config.totalTokens.toLocaleString()}
           </span>
-          <span className="mono text-[11px] text-ink-3">
+          <span className="mono text-[11px] text-content-faint">
             · across all conversations
           </span>
-        </div>
+        </motion.div>
 
         <form onSubmit={save} className="mt-9 flex flex-col gap-7">
           <Field label="Provider" hint="More providers arrive in later phases.">
-            <select
-              value="ollama"
-              disabled
-              className="mono w-full border-0 border-b border-line bg-transparent py-2 text-[14px] text-ink-2"
-            >
-              <option value="ollama">Ollama (local / cloud)</option>
-            </select>
+            <Input value="ollama" disabled className="font-sans" />
           </Field>
 
           <Field
             label="Model"
             hint={`Any model pulled or available — e.g. ${config.model}.`}
           >
-            <input
+            <Input
               value={model}
               onChange={(e) => setModel(e.target.value)}
               placeholder="glm-5.2:cloud"
-              className="mono w-full border-0 border-b border-line bg-transparent py-2 text-[14px] text-ink outline-none transition-colors focus:border-ink"
+              className="font-sans"
             />
           </Field>
 
           <Field label="Base URL" hint="OpenAI-compatible endpoint.">
-            <input
+            <Input
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="http://localhost:11434/v1"
-              className="mono w-full border-0 border-b border-line bg-transparent py-2 text-[14px] text-ink outline-none transition-colors focus:border-ink"
+              className="font-sans"
             />
           </Field>
 
@@ -143,92 +147,86 @@ export default function SettingsPage() {
             label="API key"
             hint="Optional. Leave blank for local Ollama. Sent as a Bearer token when set — for a hosted endpoint."
           >
-            <div className="flex items-center gap-3">
-              <input
-                type={showKey ? "text" : "password"}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="(none — local mode)"
-                autoComplete="off"
-                spellCheck={false}
-                className="mono w-full border-0 border-b border-line bg-transparent py-2 text-[14px] text-ink outline-none transition-colors focus:border-ink"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey((s) => !s)}
-                className="mono shrink-0 text-[11px] tracking-wide text-ink-3 hover:text-ink"
-              >
-                {showKey ? "hide" : "show"}
-              </button>
-            </div>
+            <KeyInput
+              value={apiKey}
+              onChange={setApiKey}
+              show={showKey}
+              onToggle={() => setShowKey((s) => !s)}
+              placeholder="(none — local mode)"
+            />
           </Field>
 
           <Field
             label="Tavily API key"
             hint="Optional — enables web search. When set, the assistant can search the web for current info."
           >
-            <div className="flex items-center gap-3">
-              <input
-                type={showTavilyKey ? "text" : "password"}
-                value={tavilyApiKey}
-                onChange={(e) => setTavilyApiKey(e.target.value)}
-                placeholder="(none — web search disabled)"
-                autoComplete="off"
-                spellCheck={false}
-                className="mono w-full border-0 border-b border-line bg-transparent py-2 text-[14px] text-ink outline-none transition-colors focus:border-ink"
-              />
-              <button
-                type="button"
-                onClick={() => setShowTavilyKey((s) => !s)}
-                className="mono shrink-0 text-[11px] tracking-wide text-ink-3 hover:text-ink"
-              >
-                {showTavilyKey ? "hide" : "show"}
-              </button>
-            </div>
+            <KeyInput
+              value={tavilyApiKey}
+              onChange={setTavilyApiKey}
+              show={showTavilyKey}
+              onToggle={() => setShowTavilyKey((s) => !s)}
+              placeholder="(none — web search disabled)"
+            />
           </Field>
 
           <Field
             label="OpenAI API key"
             hint="Optional — enables voice typing. The mic records a clip and this server transcribes it via OpenAI Whisper, so voice works even when the browser's built-in speech service is blocked. The key never leaves the server."
           >
-            <div className="flex items-center gap-3">
-              <input
-                type={showOpenaiKey ? "text" : "password"}
-                value={openaiApiKey}
-                onChange={(e) => setOpenaiApiKey(e.target.value)}
-                placeholder="(none — voice uses the browser engine)"
-                autoComplete="off"
-                spellCheck={false}
-                className="mono w-full border-0 border-b border-line bg-transparent py-2 text-[14px] text-ink outline-none transition-colors focus:border-ink"
-              />
-              <button
-                type="button"
-                onClick={() => setShowOpenaiKey((s) => !s)}
-                className="mono shrink-0 text-[11px] tracking-wide text-ink-3 hover:text-ink"
-              >
-                {showOpenaiKey ? "hide" : "show"}
-              </button>
-            </div>
+            <KeyInput
+              value={openaiApiKey}
+              onChange={setOpenaiApiKey}
+              show={showOpenaiKey}
+              onToggle={() => setShowOpenaiKey((s) => !s)}
+              placeholder="(none — voice uses the browser engine)"
+            />
           </Field>
 
           <div className="flex items-center gap-4 pt-1">
-            <button
-              type="submit"
-              className="mono rounded-[3px] bg-ink px-5 py-2 text-[12px] tracking-wide text-paper-2 transition-opacity hover:opacity-90"
-            >
+            <Button type="submit" variant="primary">
+              <Check size={15} />
               Save
-            </button>
-            <Link
-              href="/"
-              className="mono text-[12px] tracking-wide text-ink-3 transition-colors hover:text-ink"
-            >
-              ← back to chat
-            </Link>
-            {saved && <span className="mono text-[12px] text-feynman">saved.</span>}
+            </Button>
             {error && <span className="mono text-[12px] text-rule">{error}</span>}
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function KeyInput({
+  value,
+  onChange,
+  show,
+  onToggle,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggle: () => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        className="font-sans"
+      />
+      <IconButton
+        label={show ? "Hide key" : "Show key"}
+        size="md"
+        variant="solid"
+        onClick={onToggle}
+      >
+        {show ? <EyeOff size={15} /> : <Eye size={15} />}
+      </IconButton>
     </div>
   );
 }
@@ -244,9 +242,9 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="mono text-[12px] tracking-wide text-ink-2">{label}</span>
+      <span className="mono text-[12px] tracking-wide text-content-muted">{label}</span>
       {children}
-      {hint && <span className="mono mt-1 text-[11px] text-ink-3">{hint}</span>}
+      {hint && <span className="mono mt-1 text-[11px] text-content-faint">{hint}</span>}
     </label>
   );
 }

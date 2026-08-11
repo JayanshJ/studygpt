@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /* ---- Graph Paper Lab ---------------------------------------------------
    A study-workspace palette: aged paper + ink, a single red notebook
@@ -18,6 +19,37 @@
   --line: #d7d5c8;      /* hairlines */
   --grid: rgba(31, 32, 32, 0.045); /* faint graph-paper grid */
   --shadow-card: 0 1px 2px rgba(31, 32, 32, 0.06), 0 1px 1px rgba(31, 32, 32, 0.03);
+
+  /* ---- Studio Notebook additions (semantic aliases over the paper/ink core) --
+     These never introduce new colors — they name the core tokens by role so the
+     UI primitives (components/ui/*) stay theme-agnostic. The core vars above
+     are unchanged (the Cytoscape bridge reads them by name). */
+  --surface: var(--paper-2);     /* cards / panes */
+  --surface-2: var(--paper-3);   /* rail / deeper paper */
+  --border: var(--line);
+  --border-strong: color-mix(in oklab, var(--ink) 22%, var(--line));
+  --ring: var(--ink);            /* focus ring */
+  --ring-accent: var(--rule);    /* accent focus ring */
+  --content: var(--ink);
+  --content-muted: var(--ink-2);
+  --content-faint: var(--ink-3);
+  --accent: var(--rule);
+  --accent-2: var(--feynman);
+
+  /* Mastery bands — semantic colors for graph borders, mastery tables, source
+     chips. Mapped onto the core palette so they theme with everything else. */
+  --band-strong: var(--feynman);     /* confident — chalk blue */
+  --band-learning: color-mix(in oklab, var(--feynman) 55%, var(--ink-2)); /* in progress */
+  --band-slipping: var(--rule);      /* needs work — red rule */
+  --band-untested: var(--ink-3);     /* not yet seen */
+  --band-unknown: var(--ink-3);      /* no data */
+
+  /* Motion tokens — exposed to Tailwind via --ease-* / --duration-* below. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
 }
 
 html[data-theme="dark"] {
@@ -32,6 +64,31 @@ html[data-theme="dark"] {
   --line: #3a3b39;
   --grid: rgba(236, 234, 216, 0.05);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.34), 0 1px 1px rgba(0, 0, 0, 0.20);
+
+  /* Studio Notebook semantic aliases (warm charcoal, not flat zinc). */
+  --surface: var(--paper-2);
+  --surface-2: var(--paper-3);
+  --border: var(--line);
+  --border-strong: color-mix(in oklab, var(--ink) 30%, var(--line));
+  --ring: var(--ink);
+  --ring-accent: var(--rule);
+  --content: var(--ink);
+  --content-muted: var(--ink-2);
+  --content-faint: var(--ink-3);
+  --accent: var(--rule);
+  --accent-2: var(--feynman);
+
+  --band-strong: var(--feynman);
+  --band-learning: color-mix(in oklab, var(--feynman) 60%, var(--ink-2));
+  --band-slipping: var(--rule);
+  --band-untested: var(--ink-3);
+  --band-unknown: var(--ink-3);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
 }
 
 @theme inline {
@@ -44,9 +101,42 @@ html[data-theme="dark"] {
   --color-rule: var(--rule);
   --color-feynman: var(--feynman);
   --color-line: var(--line);
-  --font-serif: var(--font-newsreader);
-  --font-mono: var(--font-jetbrains);
+
+  /* Studio Notebook semantic tokens → Tailwind color utilities
+     (bg-surface, text-content-muted, border-border, ring-ring-accent, …). */
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ring: var(--ring);
+  --color-ring-accent: var(--ring-accent);
+  --color-content: var(--content);
+  --color-content-muted: var(--content-muted);
+  --color-content-faint: var(--content-faint);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-band-strong: var(--band-strong);
+  --color-band-learning: var(--band-learning);
+  --color-band-slipping: var(--band-slipping);
+  --color-band-untested: var(--band-untested);
+  --color-band-unknown: var(--band-unknown);
+
+  /* Fonts: sans = Inter (UI chrome), serif = Newsreader (reading), mono = JetBrains. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
   --shadow-card: var(--shadow-card);
+
+  /* Custom breakpoint: rail appears / bottom tab bar hides at `tab` (768px). */
+  --breakpoint-tab: 768px;
+
+  /* Motion namespaces → ease-out / ease-spring / duration-fast / duration-slow
+     utilities. (The base --dur/--dur-fast/--dur-slow vars above are for direct
+     use in custom transitions.) */
+  --ease-out: var(--ease-out);
+  --ease-spring: var(--ease-spring);
+  --duration-fast: var(--dur-fast);
+  --duration-slow: var(--dur-slow);
 }
 
 html {
@@ -56,7 +146,9 @@ html {
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
+  /* UI chrome is sans (Inter); reading surfaces (.prose-chat, .hero-title,
+     .hero-lede) opt back into the serif explicitly. */
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   font-size: 16px;
   line-height: 1.55;
 }
@@ -114,69 +206,12 @@ body {
   max-width: 38ch;
 }
 
-/* A notebook-page surface: a fresh-paper card with the red margin rule as a
-   2px bar pinned to the left edge — the signature made bolder for the hero. */
-.page-card {
-  position: relative;
-  border: 1px solid var(--line);
-  background: var(--paper-2);
-  border-radius: 3px;
-  box-shadow: var(--shadow-card);
-}
-.page-card::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 14px;
-  bottom: 14px;
-  width: 2px;
-  background: var(--rule);
-  border-radius: 2px;
-}
-
-/* Suggestion chip — clickable, low-key, on-palette. */
-.chip {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  border: 1px solid var(--line);
-  background: var(--paper-2);
-  border-radius: 2px;
-  padding: 0.42em 0.7em;
-  font-size: 12px;
-  line-height: 1.2;
-  color: var(--ink-2);
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
-}
-.chip:hover {
-  border-color: color-mix(in oklab, var(--ink) 40%, transparent);
-  color: var(--ink);
-}
-.chip:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
-
-/* Primary filled action button (the existing send/print pattern, factored). */
-.btn-primary {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  background: var(--ink);
-  color: var(--paper-2);
-  border: 0;
-  border-radius: 3px;
-  padding: 0.5em 1em;
-  font-size: 13px;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.btn-primary:hover { opacity: 0.9; }
-.btn-primary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-
 /* ---- Markdown rendered chat content ----
    Read-first: comfortable line-height and generous block spacing so the
    model's structured answers (headings, lists, emphasis) read as distinct
    sections rather than a cramped wall of text. Graph Paper Lab tokens only. */
 .prose-chat {
+  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
   font-size: 1rem;
   line-height: 1.8;
 }

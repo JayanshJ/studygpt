@@ -1,8 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { FolderKanban, Plus, Pencil, Trash2, FileUp, Link as LinkIcon, Workflow, Loader2 } from "lucide-react";
 import type { Material, Project } from "@/lib/db/schema";
+import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
+import { Badge } from "@/components/ui/Badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/Dialog";
+import { motion } from "motion/react";
+import { useMotion, fadeUp } from "@/lib/motion";
+import { cn } from "@/lib/cn";
 
 // Concept-graph read shape from GET /api/concepts (SP1). SP2's graph page and
 // SP4's mastery layer will extend this; SP1 only carries concepts, edges, and
@@ -17,6 +34,7 @@ type ConceptReport = {
     conceptCount: number;
     error: string | null;
   }[];
+  progress: { processed: number; total: number } | null;
 };
 
 export default function ProjectsPage() {
@@ -33,6 +51,7 @@ export default function ProjectsPage() {
   const [conceptsReport, setConceptsReport] = useState<ConceptReport | null>(null);
   const [building, setBuilding] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const m = useMotion();
 
   const loadProjects = useCallback(async () => {
     const res = await fetch("/api/projects");
@@ -92,18 +111,19 @@ export default function ProjectsPage() {
     return () => clearInterval(t);
   }, [selectedId, materials, loadMaterials]);
 
-  // Poll while any material's concept extraction is in flight. The POST to
-  // /api/concepts/extract runs server-side and may take a while for a large
-  // project; this lets the per-material chip show live "extracting…" → "N
-  // concepts" progress while it runs.
+  // Poll while the build is in flight. The POST to /api/concepts/extract runs
+  // server-side and may take a while; this refreshes the per-material chips AND
+  // the chunk-level progress bar (report.progress) while it runs. `building`
+  // covers the whole POST; anyExtracting also covers a build started in another
+  // tab that left a material in "extracting".
   useEffect(() => {
     const anyExtracting = (conceptsReport?.materials ?? []).some((m) => m.status === "extracting");
-    if (!selectedId || !anyExtracting) return;
+    if (!selectedId || (!building && !anyExtracting)) return;
     const t = setInterval(() => {
       loadConcepts(selectedId);
     }, 1000);
     return () => clearInterval(t);
-  }, [selectedId, conceptsReport, loadConcepts]);
+  }, [selectedId, building, conceptsReport, loadConcepts]);
 
   async function createProject(e: React.FormEvent) {
     e.preventDefault();
@@ -227,10 +247,16 @@ export default function ProjectsPage() {
   // preflights the chat model and runs extraction server-side; it resolves
   // only once every ready material is processed, so we surface the summary
   // (processed / concepts / edges / skipped / chunk errors) in the status line.
+  //
+  // When a graph already exists, send `force: true` so the server wipes the old
+  // graph and re-extracts every material from scratch — pressing "build" again
+  // is a rebuild (e.g. to apply a coarser extraction prompt), not a no-op that
+  // skips unchanged materials.
   async function buildGraph() {
     if (!selectedId) return;
+    const rebuild = conceptCount > 0 || edgeCount > 0;
     setBuilding(true);
-    setStatusMsg("Building concept graph…");
+    setStatusMsg(rebuild ? "Rebuilding concept graph…" : "Building concept graph…");
     // Refresh once up front so the poll effect can observe the per-material
     // "extracting" state the server sets while the POST runs.
     void loadConcepts(selectedId);
@@ -238,7 +264,7 @@ export default function ProjectsPage() {
       const res = await fetch("/api/concepts/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: selectedId }),
+        body: JSON.stringify({ projectId: selectedId, force: rebuild }),
       });
       if (res.ok) {
         const r: { processed: number; concepts: number; edges: number; skipped: number; errors: string[] } =
@@ -269,12 +295,13 @@ export default function ProjectsPage() {
   const readyMaterialCount = materials.filter((m) => m.status === "ready").length;
   const conceptCount = conceptsReport?.concepts.length ?? 0;
   const edgeCount = conceptsReport?.edges.length ?? 0;
+  const progress = conceptsReport?.progress ?? null;
   const extById = new Map((conceptsReport?.materials ?? []).map((r) => [r.materialId, r]));
   const renderConceptChip = (materialId: string) => {
     const ext = extById.get(materialId);
     if (!ext || ext.status === "pending") return null;
     if (ext.status === "extracting")
-      return <span className="mono text-[10px] text-feynman">extracting…</span>;
+      return <span className="mono flex items-center gap-1 text-[10px] text-feynman"><Loader2 size={10} className="animate-spin" />extracting…</span>;
     if (ext.status === "error")
       return (
         <span className="mono max-w-[140px] truncate text-[10px] text-rule" title={ext.error ?? ""}>
@@ -282,98 +309,68 @@ export default function ProjectsPage() {
         </span>
       );
     return (
-      <span className="mono text-[10px] text-ink-2">
+      <span className="mono text-[10px] text-content-muted">
         {ext.conceptCount} concept{ext.conceptCount === 1 ? "" : "s"}
       </span>
     );
   };
 
-  return (
-    <div className="graph-paper min-h-screen">
-      <div className="mx-auto max-w-4xl px-6 py-10">
-        <div className="mb-6 flex items-center justify-between">
-          <Link
-            href="/"
-            className="mono text-[12px] tracking-wide text-ink-3 transition-colors hover:text-ink"
-          >
-            ← Back to chat
-          </Link>
-          <span className="mono flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
-            <span className="h-1.5 w-1.5 rounded-full bg-rule" />
-            Projects
-          </span>
-        </div>
+  const projectToDelete = projects.find((p) => p.id === confirmDeleteId) ?? null;
 
-        <h1 className="mb-6 text-[1.6rem] leading-tight text-ink">
+  return (
+    <div className="graph-paper h-full overflow-y-auto">
+      <div className="mx-auto max-w-4xl px-4 py-6 tab:px-6 tab:py-10">
+        <motion.div {...m} variants={fadeUp} className="mb-5 flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
+          <FolderKanban size={16} className="text-rule" />
+          Projects
+        </motion.div>
+
+        <motion.h1 {...m} variants={fadeUp} className="mb-6 font-serif text-[1.6rem] leading-tight text-ink">
           Projects &amp; materials
-        </h1>
+        </motion.h1>
 
         <div className="grid gap-6 md:grid-cols-[260px_1fr]">
           {/* Left column: project list */}
-          <section className="rounded-[3px] border border-line bg-paper-2 p-4">
+          <Card className="p-4">
             <form onSubmit={createProject} className="mb-3 flex gap-2">
-              <input
+              <Input
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
                 placeholder="new project name"
-                className="mono w-full rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-ink-3 focus:border-ink/40"
+                className="text-[12px]"
               />
-              <button
-                type="submit"
-                className="mono shrink-0 rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] tracking-wide text-ink transition-colors hover:border-ink/40"
-              >
-                +
-              </button>
+              <Button type="submit" variant="secondary" size="sm" className="shrink-0" aria-label="Create project">
+                <Plus size={15} />
+              </Button>
             </form>
 
             <ul className="flex flex-col gap-1">
               {projects.length === 0 && (
-                <li className="mono px-1 py-3 text-[11px] text-ink-3">
+                <li className="mono px-1 py-3 text-[11px] text-content-faint">
                   no projects yet
                 </li>
               )}
               {projects.map((p) => {
                 const active = p.id === selectedId;
                 const renaming = p.id === renamingId;
-                const confirming = p.id === confirmDeleteId;
                 return (
                   <li key={p.id} className="group">
                     {renaming ? (
-                      <div className="flex gap-1">
-                        <input
-                          autoFocus
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onBlur={() => renameProject(p.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") renameProject(p.id);
-                            if (e.key === "Escape") setRenamingId(null);
-                          }}
-                          className="mono w-full rounded-[3px] border border-line bg-paper px-2 py-1 text-[12px] text-ink outline-none focus:border-ink/40"
-                        />
-                      </div>
-                    ) : confirming ? (
-                      <div className="flex items-center gap-2 rounded-[3px] bg-paper px-2 py-1.5">
-                        <span className="mono flex-1 truncate text-[11px] text-rule">
-                          delete?
-                        </span>
-                        <button
-                          onClick={() => deleteProject(p.id)}
-                          className="mono text-[11px] text-rule hover:underline"
-                        >
-                          yes
-                        </button>
-                        <button
-                          onClick={() => setConfirmDeleteId(null)}
-                          className="mono text-[11px] text-ink-3 hover:underline"
-                        >
-                          no
-                        </button>
-                      </div>
+                      <Input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={() => renameProject(p.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") renameProject(p.id);
+                          if (e.key === "Escape") setRenamingId(null);
+                        }}
+                        className="text-[12px]"
+                      />
                     ) : (
                       <div
                         className={`flex items-center gap-1.5 rounded-[3px] px-2 py-1.5 transition-colors ${
-                          active ? "bg-paper" : "hover:bg-paper/60"
+                          active ? "bg-surface-2" : "hover:bg-surface-2/60"
                         }`}
                       >
                         <button
@@ -382,42 +379,44 @@ export default function ProjectsPage() {
                         >
                           {p.name}
                         </button>
-                        <button
+                        <IconButton
+                          label="Rename project"
+                          size="sm"
+                          className="opacity-0 transition-opacity hover:text-ink group-hover:opacity-100"
                           onClick={() => {
                             setRenamingId(p.id);
                             setRenameValue(p.name);
                           }}
-                          aria-label="Rename project"
-                          className="mono text-[11px] text-ink-3 opacity-0 transition-opacity hover:text-ink group-hover:opacity-100"
                         >
-                          ✎
-                        </button>
-                        <button
+                          <Pencil size={12} />
+                        </IconButton>
+                        <IconButton
+                          label="Delete project"
+                          size="sm"
+                          className="opacity-0 text-content-faint transition-opacity hover:text-rule group-hover:opacity-100"
                           onClick={() => setConfirmDeleteId(p.id)}
-                          aria-label="Delete project"
-                          className="mono text-[11px] text-ink-3 opacity-0 transition-opacity hover:text-rule group-hover:opacity-100"
                         >
-                          ×
-                        </button>
+                          <Trash2 size={13} />
+                        </IconButton>
                       </div>
                     )}
                   </li>
                 );
               })}
             </ul>
-          </section>
+          </Card>
 
           {/* Right column: materials manager */}
-          <section className="rounded-[3px] border border-line bg-paper-2 p-4">
+          <Card className="p-4">
             {!selected ? (
-              <p className="mono py-10 text-center text-[12px] text-ink-3">
+              <p className="mono py-10 text-center text-[12px] text-content-faint">
                 select a project to manage its materials
               </p>
             ) : (
               <>
-                <div className="mb-4 flex items-baseline justify-between">
-                  <h2 className="text-[18px] text-ink">{selected.name}</h2>
-                  <span className="mono text-[11px] tracking-wide text-ink-3">
+                <div className="mb-4 flex items-baseline justify-between gap-3">
+                  <h2 className="truncate text-[18px] text-ink">{selected.name}</h2>
+                  <span className="mono shrink-0 text-[11px] tracking-wide text-content-faint">
                     {materials.length} material{materials.length === 1 ? "" : "s"}
                   </span>
                 </div>
@@ -425,39 +424,63 @@ export default function ProjectsPage() {
                 {/* Build concept graph (SP1). Disabled while building or when
                     no material is ready to extract from. The chip shows the
                     current concept/edge totals once a graph exists. */}
-                <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
-                  <button
+                <div className="mb-5 flex flex-wrap items-center gap-3 border-b border-border pb-4">
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={buildGraph}
                     disabled={building || readyMaterialCount === 0}
-                    className="mono rounded-[3px] border border-line bg-paper px-3 py-1.5 text-[12px] tracking-wide text-ink transition-colors hover:border-ink/40 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line"
                   >
-                    {building ? "building…" : "build concept graph"}
-                  </button>
+                    <Workflow size={14} />
+                    {building ? "building…" : conceptCount > 0 || edgeCount > 0 ? "rebuild concept graph" : "build concept graph"}
+                  </Button>
                   {(conceptCount > 0 || edgeCount > 0) && (
-                    <span className="mono text-[11px] text-ink-3">
-                      {conceptCount} concepts · {edgeCount} edges
-                    </span>
+                    <Badge tone="neutral">{conceptCount} concepts · {edgeCount} edges</Badge>
                   )}
                 </div>
 
+                {/* Chunk-level progress bar while a build is in flight. The
+                    extract POST writes report.progress to the DB as chunks
+                    complete; this poll-refreshed bar reads it. */}
+                {building && progress && progress.total > 0 && (
+                  <div className="mb-5 border-b border-border pb-4">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <span className="mono text-[11px] text-content-faint">
+                        extracting concepts · {progress.processed}/{progress.total}
+                      </span>
+                      <span className="mono text-[11px] text-content-faint">
+                        {Math.round((progress.processed / progress.total) * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
+                      <div
+                        className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
+                        style={{ width: `${Math.min(100, (progress.processed / progress.total) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Add material */}
-                <div className="mb-5 flex flex-col gap-2 border-b border-line pb-4">
-                  <label className="mono text-[11px] tracking-wide text-ink-3">
+                <div className="mb-5 flex flex-col gap-2 border-b border-border pb-4">
+                  <label className="mono text-[11px] tracking-wide text-content-faint">
                     title (optional)
                   </label>
-                  <input
+                  <Input
                     value={addTitle}
                     onChange={(e) => setAddTitle(e.target.value)}
                     placeholder="material title"
-                    className="mono w-full rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-ink-3 focus:border-ink/40"
+                    className="text-[12px]"
                   />
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <button
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => fileInputRef.current?.click()}
-                      className="mono rounded-[3px] border border-line bg-paper px-3 py-1.5 text-[12px] tracking-wide text-ink transition-colors hover:border-ink/40"
                     >
-                      + upload PDFs
-                    </button>
+                      <FileUp size={14} />
+                      upload PDFs
+                    </Button>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -471,86 +494,105 @@ export default function ProjectsPage() {
                       }}
                     />
                     <form onSubmit={submitUrl} className="flex flex-1 gap-2">
-                      <input
+                      <Input
                         value={addUrl}
                         onChange={(e) => setAddUrl(e.target.value)}
                         placeholder="https://example.com/article"
-                        className="mono w-full rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-ink-3 focus:border-ink/40"
+                        className="text-[12px]"
                       />
-                      <button
-                        type="submit"
-                        className="mono shrink-0 rounded-[3px] border border-line bg-paper px-3 py-1.5 text-[12px] tracking-wide text-ink transition-colors hover:border-ink/40"
-                      >
+                      <Button type="submit" variant="secondary" size="sm" className="shrink-0">
+                        <LinkIcon size={14} />
                         add URL
-                      </button>
+                      </Button>
                     </form>
                   </div>
                   {statusMsg && (
-                    <p className="mono text-[11px] text-ink-3">{statusMsg}</p>
+                    <p className="mono text-[11px] text-content-faint">{statusMsg}</p>
                   )}
                 </div>
 
                 {/* Materials list */}
                 <ul className="flex flex-col gap-2">
                   {materials.length === 0 && (
-                    <li className="mono py-6 text-center text-[11px] text-ink-3">
+                    <li className="mono py-6 text-center text-[11px] text-content-faint">
                       no materials yet
                     </li>
                   )}
-                  {materials.map((m) => (
+                  {materials.map((mat) => (
                     <li
-                      key={m.id}
-                      className="group flex items-center gap-3 rounded-[3px] border border-line bg-paper px-3 py-2"
+                      key={mat.id}
+                      className="group flex items-center gap-3 rounded-[3px] border border-border bg-surface-2 px-3 py-2"
                     >
-                      <span className="mono rounded-[2px] border border-line bg-paper-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ink-3">
-                        {m.source_type}
-                      </span>
+                      <Badge tone="neutral" className="uppercase">{mat.source_type}</Badge>
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-[13px] text-ink">
-                          {m.title}
+                          {mat.title}
                         </div>
-                        <div className="mono truncate text-[10px] text-ink-3">
-                          {m.source_ref}
+                        <div className="mono truncate text-[10px] text-content-faint">
+                          {mat.source_ref}
                         </div>
                       </div>
                       <span
-                        className={`mono text-[10px] tracking-wide ${
-                          m.status === "ready"
-                            ? "text-ink-2"
-                            : m.status === "processing"
+                        className={cn(
+                          "mono text-[10px] tracking-wide",
+                          mat.status === "ready"
+                            ? "text-content-muted"
+                            : mat.status === "processing"
                               ? "text-feynman"
-                              : "text-rule"
-                        }`}
+                              : "text-rule",
+                        )}
                       >
-                        {m.status}
+                        {mat.status}
                       </span>
-                      <span className="mono text-[10px] text-ink-3">
-                        {m.char_count.toLocaleString()} chars
+                      <span className="mono hidden text-[10px] text-content-faint sm:inline">
+                        {mat.char_count.toLocaleString()} chars
                       </span>
-                      {renderConceptChip(m.id)}
-                      {m.status === "error" && m.error && (
+                      {renderConceptChip(mat.id)}
+                      {mat.status === "error" && mat.error && (
                         <span
                           className="mono max-w-[180px] truncate text-[10px] text-rule"
-                          title={m.error}
+                          title={mat.error}
                         >
-                          {m.error}
+                          {mat.error}
                         </span>
                       )}
-                      <button
-                        onClick={() => deleteMaterial(m.id)}
-                        aria-label="Delete material"
-                        className="mono text-[12px] text-ink-3 opacity-0 transition-opacity hover:text-rule group-hover:opacity-100"
+                      <IconButton
+                        label="Delete material"
+                        size="sm"
+                        className="opacity-0 text-content-faint transition-opacity hover:text-rule group-hover:opacity-100"
+                        onClick={() => deleteMaterial(mat.id)}
                       >
-                        ×
-                      </button>
+                        <Trash2 size={13} />
+                      </IconButton>
                     </li>
                   ))}
                 </ul>
               </>
             )}
-          </section>
+          </Card>
         </div>
       </div>
+
+      {/* Delete project confirmation */}
+      <Dialog open={!!projectToDelete} onOpenChange={(o) => !o && setConfirmDeleteId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete “{projectToDelete?.name}”?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the project, its materials, and its concept graph. This can’t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost" size="sm">cancel</Button>
+            </DialogClose>
+            <Button variant="danger" size="sm" onClick={() => projectToDelete && deleteProject(projectToDelete.id)}>
+              <Trash2 size={14} />
+              delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

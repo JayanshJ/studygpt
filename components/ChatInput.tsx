@@ -1,7 +1,22 @@
 "use client";
 
 import { useState, useRef, useEffect, type FormEvent, type KeyboardEvent, type ClipboardEvent } from "react";
+import {
+  Plus,
+  FileText,
+  Globe,
+  Mic,
+  Loader2,
+  Square,
+  ArrowUp,
+  X,
+  Check,
+  FolderPlus,
+  Paperclip,
+} from "lucide-react";
 import type { Attachment } from "@/lib/db/schema";
+import { Button } from "@/components/ui/Button";
+import { cn } from "@/lib/cn";
 
 interface Props {
   onSend: (text: string, attachments: Attachment[], document: boolean, web: boolean) => void;
@@ -511,41 +526,46 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
   }
 
   return (
-    <form onSubmit={onSubmit} className="px-4 pb-5 pt-2">
+    <form onSubmit={onSubmit} className="px-4 pb-4 pt-2 tab:pb-5">
       {gateMsg && (
-        <div className="mx-auto mb-1 max-w-3xl text-[11px] text-rule">{gateMsg}</div>
+        <div className="mono mx-auto mb-1 max-w-3xl text-[11px] text-rule">{gateMsg}</div>
       )}
-      <div className="mx-auto max-w-3xl rounded-[3px] border border-line bg-paper-2 px-3 py-2 transition-colors focus-within:border-ink/40">
+      <div className="mx-auto max-w-3xl rounded-[5px] border border-border bg-surface px-3 py-2 transition-colors duration-fast ease-out focus-within:border-border-strong focus-within:shadow-card">
         {pending.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {pending.map((p) => (
               <div
                 key={p.id}
-                className="mono flex items-center gap-1.5 rounded-[2px] border border-line bg-paper px-2 py-1 text-[11px] text-ink-2"
+                className="mono flex items-center gap-1.5 rounded-[3px] border border-border bg-surface-2 px-2 py-1 text-[11px] text-content-muted"
               >
                 {p.attachment.type === "image" ? (
                   <>
                     <img src={p.attachment.dataUrl} alt={p.attachment.name} className="h-7 w-7 rounded-[2px] object-cover" />
-                    <span className="truncate max-w-[160px]">
+                    <span className="max-w-[160px] truncate">
                       {parsingImage.has(p.id)
                         ? "parsing…"
                         : `OCR ${(p.attachment.charCount ?? 0).toLocaleString()}c`}
                     </span>
                   </>
                 ) : (
-                  <span className="truncate max-w-[160px]">📎 {p.attachment.name} ({p.attachment.charCount.toLocaleString()}c)</span>
+                  <span className="flex max-w-[160px] items-center gap-1 truncate">
+                    <Paperclip size={11} className="shrink-0" /> {p.attachment.name} ({p.attachment.charCount.toLocaleString()}c)
+                  </span>
                 )}
                 {p.attachment.type === "file" && projectId && (
                   addedToProject.has(p.id) ? (
-                    <span className="text-feynman">added ✓</span>
+                    <span className="flex items-center gap-0.5 text-feynman">
+                      <Check size={11} /> added
+                    </span>
                   ) : (
                     <button
                       type="button"
                       onClick={() => addToProject(p.id)}
                       disabled={addingToProject === p.id}
-                      className="text-feynman hover:underline disabled:opacity-50"
+                      className="flex items-center gap-0.5 text-feynman hover:underline disabled:opacity-50"
                     >
-                      {addingToProject === p.id ? "…" : "＋ to project"}
+                      <FolderPlus size={11} />
+                      {addingToProject === p.id ? "…" : "to project"}
                     </button>
                   )
                 )}
@@ -553,9 +573,9 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
                   type="button"
                   onClick={() => setPending((prev) => prev.filter((x) => x.id !== p.id))}
                   aria-label="Remove attachment"
-                  className="text-ink-3 hover:text-rule"
+                  className="text-content-faint transition-colors hover:text-rule"
                 >
-                  ×
+                  <X size={12} />
                 </button>
               </div>
             ))}
@@ -570,71 +590,61 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
             className="hidden"
             onChange={onPickChange}
           />
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || extracting}
             title="Attach files or images (images are OCR'd so any model can read them)"
             aria-label="Attach files"
-            className="mono shrink-0 rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] tracking-wide text-ink-2 transition-colors hover:border-ink/40 disabled:opacity-40"
+            className="shrink-0"
           >
-            +
-          </button>
-          <button
+            <Plus size={15} strokeWidth={2} />
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={() => setDocMode((v) => !v)}
             disabled={disabled}
             aria-pressed={docMode}
             title="Send this message as a formatted document you can print to PDF"
-            className={`mono shrink-0 rounded-[3px] border px-2 py-1.5 text-[12px] tracking-wide transition-colors disabled:opacity-40 ${
-              docMode
-                ? "border-rule text-rule hover:bg-rule/10"
-                : "border-line bg-paper text-ink-2 hover:border-ink/40"
-            }`}
+            className={cn("shrink-0", docMode && "border-rule text-rule hover:bg-rule/10")}
           >
+            <FileText size={14} />
             doc
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={() => setWeb((v) => !v)}
             disabled={disabled}
             aria-pressed={web}
             title="Toggle web search for this turn"
-            className={`mono shrink-0 rounded-[3px] border px-2 py-1.5 text-[12px] tracking-wide transition-colors disabled:opacity-40 ${
-              web
-                ? "border-rule text-rule hover:bg-rule/10"
-                : "border-line bg-paper text-ink-2 hover:border-ink/40"
-            }`}
+            className={cn("shrink-0", web && "border-rule text-rule hover:bg-rule/10")}
           >
+            <Globe size={14} />
             web
-          </button>
+          </Button>
           {(speechSupported || transcriptionAvailable) && (
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={toggleVoice}
               disabled={disabled || transcribing}
-              title={
-                transcribing
-                  ? "Transcribing…"
-                  : listening
-                    ? "Stop voice typing"
-                    : "Voice type"
-              }
-              aria-label={
-                transcribing
-                  ? "Transcribing…"
-                  : listening
-                    ? "Stop voice typing"
-                    : "Voice type"
-              }
-              className={`mono shrink-0 rounded-[3px] border px-2 py-1.5 text-[12px] tracking-wide transition-colors disabled:opacity-40 ${
-                listening
-                  ? "border-rule text-rule hover:bg-rule/10"
-                  : "border-line bg-paper text-ink-2 hover:border-ink/40"
-              }`}
+              title={transcribing ? "Transcribing…" : listening ? "Stop voice typing" : "Voice type"}
+              aria-label={transcribing ? "Transcribing…" : listening ? "Stop voice typing" : "Voice type"}
+              className={cn(
+                "shrink-0",
+                listening && "border-rule text-rule hover:bg-rule/10",
+                listening && "animate-pulse",
+              )}
             >
-              {listening ? "●" : "🎙"}
-            </button>
+              {transcribing ? <Loader2 size={15} className="animate-spin" /> : <Mic size={15} />}
+            </Button>
           )}
           <textarea
             ref={ref}
@@ -645,26 +655,32 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
             rows={1}
             disabled={disabled}
             placeholder={placeholder || "Ask about a concept…"}
-            className="mono max-h-48 flex-1 resize-none bg-transparent py-1 text-[13px] leading-6 text-ink outline-none placeholder:text-ink-3 disabled:opacity-50"
+            className="max-h-48 flex-1 resize-none bg-transparent py-1.5 text-[13px] leading-6 text-ink outline-none placeholder:text-content-faint disabled:opacity-50"
           />
           {streaming ? (
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={onStop}
               aria-label="Stop generating"
-              className="mono shrink-0 rounded-[3px] border border-rule px-3 py-1.5 text-[12px] tracking-wide text-rule transition-colors hover:bg-rule/10"
+              className="shrink-0 border-rule text-rule hover:bg-rule/10"
             >
+              <Square size={13} className="fill-current" />
               stop
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
               type="submit"
+              variant="primary"
+              size="sm"
               disabled={disabled || (!value.trim() && pending.length === 0) || parsingImage.size > 0}
               aria-label="Send"
-              className="mono shrink-0 rounded-[3px] bg-ink px-3 py-1.5 text-[12px] tracking-wide text-paper-2 transition-opacity hover:opacity-90 disabled:opacity-30"
+              className="shrink-0"
             >
-              {docMode ? "send doc ↵" : "send ↵"}
-            </button>
+              <ArrowUp size={15} strokeWidth={2.25} />
+              {docMode ? "send doc" : "send"}
+            </Button>
           )}
         </div>
       </div>
