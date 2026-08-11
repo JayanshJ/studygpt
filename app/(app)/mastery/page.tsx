@@ -117,7 +117,7 @@ export default function MasteryPage() {
         ) : loading ? (
           <p className="mono py-10 text-center text-[12px] text-content-faint">loading mastery…</p>
         ) : loadError ? (
-          <p className="mono py-10 text-center text-[12px] text-rule">{loadError}</p>
+          <p className="mono py-10 text-center text-[12px] text-danger">{loadError}</p>
         ) : !rows || rows.length === 0 ? (
           <div className="mono py-10 text-center text-[12px] text-content-faint">
             no concepts yet —{" "}

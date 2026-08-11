@@ -13,23 +13,24 @@ import type { Band } from "@/lib/mastery/model";
 
 type Grade = 1 | 2 | 3 | 4;
 
-// Band → border token for the flip-card. Slipping → rule, strong → feynman,
-// learning → ink, untested/unknown/undefined → the default border.
+// Band → border token for the flip-card. Uses the semantic band tokens
+// so card borders auto-track the palette (strong=emerald, learning=amber,
+// slipping=rose); untested/unknown/undefined → the default border.
 function bandBorder(band?: Band): string {
   switch (band) {
     case "slipping":
-      return "border-rule";
+      return "border-band-slipping";
     case "strong":
-      return "border-feynman";
+      return "border-band-strong";
     case "learning":
-      return "border-ink";
+      return "border-band-learning";
     default:
       return "border-border"; // untested + unknown
   }
 }
 
 const GRADE_BUTTONS: { grade: Grade; label: string; cls: string }[] = [
-  { grade: 1, label: "Again", cls: "border-rule text-rule hover:bg-rule/10" },
+  { grade: 1, label: "Again", cls: "border-band-slipping text-band-slipping hover:bg-band-slipping/10" },
   { grade: 2, label: "Hard", cls: "border-border text-content-faint hover:bg-surface-2" },
   { grade: 3, label: "Good", cls: "border-ink text-ink hover:bg-ink/10" },
   { grade: 4, label: "Easy", cls: "border-feynman text-feynman hover:bg-feynman/10" },
@@ -39,7 +40,7 @@ const GRADE_BUTTONS: { grade: Grade; label: string; cls: string }[] = [
 // grade, advance. "Again" cards are re-queued to the tail once (max one extra
 // re-show per card per session) for immediate practice; the persisted due is
 // whatever FSRS computed on the server. On a grade POST failure, stay on the
-// card and show a text-rule error so the grade is never silently lost.
+// card and show a text-danger error so the grade is never silently lost.
 export function StudySession({
   queue,
   deckLabel,
@@ -117,7 +118,7 @@ export function StudySession({
         <Card accent className="p-6 pl-7">
           <div className="mono text-[11px] tracking-wide text-content-faint">session complete</div>
           <div className="mt-3 text-[1.2rem] text-ink">
-            {reviewed} reviewed · <span className="text-rule">{againCount} again</span>
+            {reviewed} reviewed · <span className="text-band-slipping">{againCount} again</span>
           </div>
           {onComplete && (
             <Button variant="secondary" size="sm" className="mt-6" onClick={onComplete}>
@@ -144,7 +145,7 @@ export function StudySession({
         {current.state === 0 && <span className="text-content-faint">new</span>}
       </div>
 
-      {error && <div className="mono mb-3 text-[11px] text-rule">{error}</div>}
+      {error && <div className="mono mb-3 text-[11px] text-danger">{error}</div>}
 
       {/* Cross-deck card badge: shown only in cross-deck mode (no per-deck label). */}
       {!deckLabel && current.deckTitle && (

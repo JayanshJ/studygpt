@@ -528,7 +528,7 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
   return (
     <form onSubmit={onSubmit} className="px-4 pb-4 pt-2 tab:pb-5">
       {gateMsg && (
-        <div className="mono mx-auto mb-1 max-w-[680px] text-[11px] text-rule">{gateMsg}</div>
+        <div className="mono mx-auto mb-1 max-w-[680px] text-[11px] text-danger">{gateMsg}</div>
       )}
       <div className="mx-auto max-w-[680px] rounded-[5px] border border-border bg-surface px-3 py-2 transition-colors duration-fast ease-out focus-within:border-border-strong focus-within:shadow-card">
         {pending.length > 0 && (

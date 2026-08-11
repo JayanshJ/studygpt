@@ -1,8 +1,8 @@
-// Graph Paper Lab token resolution + Cytoscape stylesheet builder.
+// Graph token resolution + Cytoscape stylesheet builder.
 //
 // Cytoscape renders to a <canvas>, so its style objects need CONCRETE color
 // strings — CSS `var(--ink-2)` does not resolve on a canvas the way it did on
-// @xyflow's DOM nodes. `readGraphTokens()` resolves the Graph Paper tokens
+// @xyflow's DOM nodes. `readGraphTokens()` resolves the graph tokens
 // (and the mono font stack) from the live computed style on <html>, so the
 // CSS in globals.css stays the single source of truth. The component rebuilds
 // the stylesheet via `buildCytoscapeStyle(tokens)` whenever the theme flips
@@ -23,7 +23,7 @@ export interface GraphTokens {
   ink2: string; // secondary text, hierarchical edges
   ink3: string; // faint captions, peer edges, untested/unknown border
   rule: string; // red notebook rule, selection
-  feynman: string; // chalk blue, strong band
+  feynman: string; // emerald, strong band
   line: string; // hairlines
   mono: string; // resolved mono font stack for canvas text
   amber: string; // learning band border
@@ -36,18 +36,18 @@ function readVar(name: string, fallback: string): string {
   return v || fallback;
 }
 
-// Resolve the Graph Paper tokens from the live <html> computed style. Called
+// Resolve the graph tokens from the live <html> computed style. Called
 // on mount and whenever html[data-theme] changes.
 export function readGraphTokens(): GraphTokens {
   return {
-    paper: readVar("--paper", "#f2f0e7"),
-    paper2: readVar("--paper-2", "#fbfaf3"),
-    ink: readVar("--ink", "#1f2020"),
-    ink2: readVar("--ink-2", "#565850"),
-    ink3: readVar("--ink-3", "#6f7166"),
-    rule: readVar("--rule", "#c8443a"),
-    feynman: readVar("--feynman", "#2e5c8a"),
-    line: readVar("--line", "#d7d5c8"),
+    paper: readVar("--paper", "#ffffff"),
+    paper2: readVar("--paper-2", "#f6f6f7"),
+    ink: readVar("--ink", "#18181b"),
+    ink2: readVar("--ink-2", "#52525b"),
+    ink3: readVar("--ink-3", "#8a8a93"),
+    rule: readVar("--rule", "#f97316"),
+    feynman: readVar("--feynman", "#0f9d76"),
+    line: readVar("--line", "#e6e6e9"),
     mono: readVar("--font-mono", "ui-monospace, monospace"),
     amber: readVar("--amber", "#c08a00"),
     rose: readVar("--rose", "#c0445a"),

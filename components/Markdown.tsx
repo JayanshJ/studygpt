@@ -38,7 +38,7 @@ function PreBlock({
     if (streaming) {
       return (
         <div className="mono my-2 flex items-center gap-1.5 rounded-[3px] border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint">
-          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-feynman" />
+          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-rule" />
           building visualization…
         </div>
       );
@@ -49,7 +49,7 @@ function PreBlock({
     if (streaming) {
       return (
         <div className="mono my-2 flex items-center gap-1.5 rounded-[3px] border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint">
-          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-feynman" />
+          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-rule" />
           building flashcards…
         </div>
       );

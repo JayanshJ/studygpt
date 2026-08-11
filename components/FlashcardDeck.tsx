@@ -219,7 +219,7 @@ export const FlashcardDeck = memo(function FlashcardDeck({
       </div>
 
       {saveError && (
-        <div className="mono px-3 pb-2 text-[11px] text-rule">{saveError}</div>
+        <div className="mono px-3 pb-2 text-[11px] text-danger">{saveError}</div>
       )}
     </div>
   );

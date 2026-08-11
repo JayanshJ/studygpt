@@ -1,10 +1,11 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* ---- Graph Paper Lab ---------------------------------------------------
-   A study-workspace palette: aged paper + ink, a single red notebook
-   margin rule as the signature, a faint graph-paper grid as the surface.
-   Serif body (Newsreader) for reading prose, mono (JetBrains Mono) for chrome.
+/* ---- Minimal orange ---------------------------------------------------
+   A study-workspace palette: clean neutrals (white / near-black), a single
+   orange accent as the signature, and a muted status set (emerald / amber /
+   rose / gray). Serif body (Newsreader) for reading prose, sans (Inter) for
+   UI, mono (JetBrains Mono) for chrome.
    --------------------------------------------------------------------- */
 
 :root {
@@ -168,9 +169,9 @@ body {
 }
 
 /* ---- Onboarding / display helpers -----------------------------------
-   Evolved Graph Paper Lab: a bolder, more modern variant of the notebook
-   look for the welcome hero and empty states. Tokens only — no new colors or
-   fonts — so they stay on-palette and theme with the rest of the app. */
+   Display helpers: a bolder treatment of the palette for the welcome hero and
+   empty states. Tokens only — no new colors or fonts — so they stay on-palette
+   and theme with the rest of the app. */
 
 /* Small tracked mono label that announces a section. */
 .eyebrow {
@@ -203,7 +204,7 @@ body {
 /* ---- Markdown rendered chat content ----
    Read-first: comfortable line-height and generous block spacing so the
    model's structured answers (headings, lists, emphasis) read as distinct
-   sections rather than a cramped wall of text. Graph Paper Lab tokens only. */
+   sections rather than a cramped wall of text. Semantic tokens only. */
 .prose-chat {
   font-family: var(--font-serif), Georgia, "Times New Roman", serif;
   font-size: 1rem;
