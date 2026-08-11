@@ -68,7 +68,7 @@ export function LearningPathTrajectory({
                 key={it.conceptId}
                 ref={it.isYouAreHere ? hereRef : undefined}
                 className={cn(
-                  "relative flex items-center gap-2 border-b border-border/60 px-3 py-2 transition-colors",
+                  "group relative flex items-center gap-2 border-b border-border/60 px-3 py-2 transition-colors",
                   it.isYouAreHere ? "bg-surface-2" : it.conceptId === selectedId ? "bg-surface-2/60" : "hover:bg-surface-2/40",
                 )}
               >
@@ -111,7 +111,10 @@ export function LearningPathTrajectory({
                   <Link
                     href={askHref}
                     aria-label={`Ask in chat about ${it.label}`}
-                    className="mono shrink-0 rounded-[3px] border border-border bg-surface px-1.5 py-0.5 text-[10px] text-content-muted transition-colors hover:border-border-strong hover:text-ink"
+                    className={cn(
+                      "mono shrink-0 rounded-[3px] border border-border bg-surface px-1.5 py-0.5 text-[10px] text-content-muted transition-colors hover:border-border-strong hover:text-ink",
+                      it.isYouAreHere ? "inline-flex" : "hidden group-hover:inline-flex",
+                    )}
                   >
                     ask
                     <ArrowUpRight size={10} className="-ml-0.5 inline align-baseline" />
