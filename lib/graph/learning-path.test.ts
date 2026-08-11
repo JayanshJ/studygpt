@@ -120,6 +120,20 @@ test("cycle: unlocks together when all mastered", () => {
   assert.equal(s.get("b"), "mastered");
 });
 
+test("external dependent on a mastered cycle -> ready", () => {
+  // a and b form a mastered prerequisite_of cycle (a->b, b->a, both strong);
+  // c is an external dependent whose prereq is the cycle member a. All of c's
+  // transitive ancestors are mastered → c should be ready (not locked).
+  const { concepts, edges } = fixture({
+    bands: { a: "strong", b: "strong", c: "untested" },
+    prereqs: ["a->b", "b->a", "a->c"],
+  });
+  const s = computeStatuses(concepts, edges);
+  assert.equal(s.get("a"), "mastered");
+  assert.equal(s.get("b"), "mastered");
+  assert.equal(s.get("c"), "ready");
+});
+
 test("isolated concept (no edges) is ready unless mastered", () => {
   const { concepts, edges } = fixture({ bands: { a: "untested", b: "strong" } });
   const s = computeStatuses(concepts, edges);

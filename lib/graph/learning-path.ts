@@ -47,9 +47,11 @@ export function computeStatuses(
   function ancestorsMastered(id: string, visited: Set<string>): boolean {
     if (memo.has(id)) return memo.get(id) === "ready";
     if (visited.has(id)) {
-      // Cycle: treat the revisit as "not yet known mastered" — only ready if
-      // the node itself is mastered (handled by caller). Conservative: false.
-      return false;
+      // Cycle: this revisit is only reachable through mastered nodes — each
+      // `p` passed the `mastered.has(p)` check before recursing into
+      // ancestorsMastered. So a cycle node is mastered by construction → its
+      // ancestors are satisfied → return true (the external dependent is ready).
+      return mastered.has(id);
     }
     visited.add(id);
     for (const p of prereqs.get(id) ?? []) {

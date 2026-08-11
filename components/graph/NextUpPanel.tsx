@@ -4,7 +4,8 @@
 // only). Lists the cluster's READY concepts ranked by prerequisite_of
 // out-degree (most-foundational first), each clickable to select + center the
 // concept. Stacked above DetailPanel in the right column. Empty states cover
-// "cluster complete" and "blocked (prerequisites in another cluster)".
+// "cluster complete", "blocked (prerequisites in another cluster)", and
+// "in progress (no ready concepts yet)".
 
 import { Check, Lock } from "lucide-react";
 import type { ClusterStatus } from "@/lib/graph/learning-path";
@@ -35,13 +36,22 @@ export function NextUpPanel({ clusterStatus, onSelect }: NextUpPanelProps) {
   }
 
   if (clusterStatus.frontier.length === 0) {
-    // Has unmastered concepts but none ready → blocked (prereqs live elsewhere).
+    const blocked = clusterStatus.blocked;
     return (
       <Card className="p-4">
         {title}
         <div className="mono flex items-center gap-1.5 text-[12px] text-content-muted">
-          <Lock size={12} className="text-content-faint" />
-          blocked — prerequisites in another cluster
+          {blocked ? (
+            <>
+              <Lock size={12} className="text-content-faint" />
+              blocked — prerequisites in another cluster
+            </>
+          ) : (
+            <>
+              <Check size={12} className="text-content-faint" />
+              in progress — no ready concepts yet
+            </>
+          )}
         </div>
       </Card>
     );

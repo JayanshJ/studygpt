@@ -282,11 +282,21 @@ export function ConceptGraph({
       if (!pathMode) return;
       // The `hierarchical` class was assigned at element-build time for
       // prerequisite_of/part_of/generalizes. Only prerequisite_of is the
-      // backbone; fade everything else (peer edges) in path mode.
-      if (e.data("relation") === "prerequisite_of") e.addClass("path-backbone");
-      else e.addClass("path-faded");
+      // backbone; fade only peer edges (example_of/contrasts_with/applies_to)
+      // so the prereq DAG reads through. part_of/generalizes keep their normal
+      // hierarchical styling — they encode structure, not the learning path.
+      const rel = e.data("relation");
+      if (rel === "prerequisite_of") {
+        e.addClass("path-backbone");
+      } else if (!HIERARCHICAL.has(rel)) {
+        // Peer edges (example_of/contrasts_with/applies_to) fade so the prereq
+        // DAG reads through. Hierarchical part_of/generalizes keep their normal
+        // styling — they encode structure, not the learning path.
+        e.addClass("path-faded");
+      }
+      // part_of / generalizes: no path class — keep their build-time hierarchical styling.
     });
-  }, [statuses, pathMode]);
+  }, [statuses, pathMode, nodeSig]);
 
   // Esc exits fullscreen. (The X button is the other exit path.)
   useEffect(() => {
