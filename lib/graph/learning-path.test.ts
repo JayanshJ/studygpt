@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeStatuses } from "./learning-path";
+import { computeStatuses, computeCoverage, computeClusterStatuses } from "./learning-path";
+import type { Cluster } from "./clusters";
 
 // Helper: build concepts with bands and prerequisite_of edges concisely.
 // prereqs: entries of "P->C" mean P is a prerequisite_of C (P needed for C).
@@ -141,4 +142,86 @@ test("self-loop prereq ignored (not a real dependency)", () => {
   const { concepts, edges } = fixture({ bands: { a: "untested" }, prereqs: ["a->a"] });
   const s = computeStatuses(concepts, edges);
   assert.equal(s.get("a"), "ready");
+});
+
+function statusesMap(entries: Record<string, import("./learning-path").ConceptStatus>) {
+  return new Map(Object.entries(entries));
+}
+
+test("computeCoverage: counts and percent", () => {
+  const s = statusesMap({ a: "mastered", b: "ready", c: "locked", d: "in_progress", e: "mastered" });
+  const cov = computeCoverage(s);
+  assert.equal(cov.total, 5);
+  assert.equal(cov.mastered, 2);
+  assert.equal(cov.ready, 1);
+  assert.equal(cov.locked, 1);
+  assert.equal(cov.inProgress, 1);
+  assert.equal(cov.percent, 40);
+});
+
+test("computeCoverage: empty -> 0 percent, no NaN", () => {
+  const cov = computeCoverage(new Map());
+  assert.equal(cov.total, 0);
+  assert.equal(cov.percent, 0);
+});
+
+const CLUSTERS: Cluster[] = [
+  { id: "c1", name: "Cluster 1", conceptCount: 4, conceptIds: ["a", "b", "c", "d"] },
+  { id: "c2", name: "Cluster 2", conceptCount: 2, conceptIds: ["e", "f"] },
+];
+const LABELS = new Map([["a", "A"], ["b", "B"], ["c", "C"], ["d", "D"], ["e", "E"], ["f", "F"]]);
+
+test("cluster complete: all mastered", () => {
+  const s = statusesMap({ a: "mastered", b: "mastered", c: "mastered", d: "mastered", e: "ready", f: "locked" });
+  const cs = computeClusterStatuses(CLUSTERS, s, [], LABELS);
+  const c1 = cs.find((x) => x.clusterId === "c1")!;
+  assert.equal(c1.complete, true);
+  assert.equal(c1.blocked, false);
+  assert.equal(c1.startHere, null);
+  assert.deepEqual(c1.frontier, []);
+});
+
+test("cluster blocked: locked>0 and ready===0", () => {
+  const s = statusesMap({ a: "mastered", b: "mastered", c: "locked", d: "locked", e: "ready", f: "locked" });
+  const cs = computeClusterStatuses(CLUSTERS, s, [], LABELS);
+  const c2 = cs.find((x) => x.clusterId === "c2")!;
+  assert.equal(c2.blocked, false); // e is ready, so not blocked
+  const c1 = cs.find((x) => x.clusterId === "c1")!;
+  assert.equal(c1.blocked, true);
+});
+
+test("frontier ranked by prerequisite_of out-degree desc, then label asc", () => {
+  // a is prereq of 2, b is prereq of 1, d is prereq of 0. a,b,d ready.
+  const edges = [
+    { source: "a", target: "x", relation: "prerequisite_of" },
+    { source: "a", target: "y", relation: "prerequisite_of" },
+    { source: "b", target: "z", relation: "prerequisite_of" },
+    { source: "a", target: "x", relation: "contrasts_with" }, // peer, not counted
+  ];
+  const s = statusesMap({ a: "ready", b: "ready", c: "locked", d: "ready" });
+  const cs = computeClusterStatuses(CLUSTERS, s, edges, LABELS);
+  const c1 = cs.find((x) => x.clusterId === "c1")!;
+  assert.deepEqual(c1.frontier.map((f) => f.conceptId), ["a", "b", "d"]);
+  assert.equal(c1.frontier[0].dependents, 2);
+  assert.equal(c1.frontier[1].dependents, 1);
+  assert.equal(c1.frontier[2].dependents, 0);
+  assert.equal(c1.startHere, "a");
+  assert.equal(c1.startHereLabel, "A");
+});
+
+test("frontier excludes non-ready concepts", () => {
+  const s = statusesMap({ a: "mastered", b: "in_progress", c: "locked", d: "ready" });
+  const cs = computeClusterStatuses(CLUSTERS, s, [], LABELS);
+  const c1 = cs.find((x) => x.clusterId === "c1")!;
+  assert.deepEqual(c1.frontier.map((f) => f.conceptId), ["d"]);
+});
+
+test("frontier tie on dependents breaks by total degree then label asc", () => {
+  // b and d both have 0 prerequisite_of out-degree. b has a peer edge (degree 1), d degree 0.
+  const edges = [{ source: "b", target: "a", relation: "contrasts_with" }];
+  const s = statusesMap({ a: "mastered", b: "ready", c: "locked", d: "ready" });
+  const cs = computeClusterStatuses(CLUSTERS, s, edges, LABELS);
+  const c1 = cs.find((x) => x.clusterId === "c1")!;
+  // b (degree 1) before d (degree 0)
+  assert.deepEqual(c1.frontier.map((f) => f.conceptId), ["b", "d"]);
 });
