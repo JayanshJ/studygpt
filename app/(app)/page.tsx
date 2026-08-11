@@ -740,7 +740,7 @@ export default function Page() {
               </motion.div>
             </div>
           ) : (
-            <div className="mx-auto flex max-w-3xl flex-col gap-5">
+            <div className="mx-auto flex w-full max-w-[680px] flex-col">
               {messages.length === 0 && !streaming && (
                 <motion.div {...m} variants={fadeUp} className="mx-auto mt-20 w-full max-w-[520px] text-center">
                   <p className="eyebrow">Ask</p>
@@ -763,32 +763,33 @@ export default function Page() {
                   </div>
                 </motion.div>
               )}
-              {messages.map((m) => (
-                <ChatMessage
-                  key={m.id}
-                  id={m.id}
-                  role={m.role}
-                  content={m.content}
-                  attachments={m.attachments}
-                  kind={m.kind}
-                  streaming={streaming && m.id === assistantStreamId}
-                  sources={m.sources}
-                  status={m.status}
-                  reasoning={m.reasoning}
-                  allMaterials={activeProjectMaterials}
-                  canRegenerate={m.id === lastAssistantId}
-                  onRegenerate={regenerate}
-                  onEdit={(content, attachments) => editMessage(m.id, content, attachments)}
-                  conversationTitle={conversation?.title}
-                  conversationId={conversation?.id}
-                />
+              {messages.map((m, i) => (
+                <div key={m.id} className={i === 0 ? "pt-2" : "mt-6 border-t border-border pt-6"}>
+                  <ChatMessage
+                    id={m.id}
+                    role={m.role}
+                    content={m.content}
+                    attachments={m.attachments}
+                    kind={m.kind}
+                    streaming={streaming && m.id === assistantStreamId}
+                    sources={m.sources}
+                    status={m.status}
+                    reasoning={m.reasoning}
+                    allMaterials={activeProjectMaterials}
+                    canRegenerate={m.id === lastAssistantId}
+                    onRegenerate={regenerate}
+                    onEdit={(content, attachments) => editMessage(m.id, content, attachments)}
+                    conversationTitle={conversation?.title}
+                    conversationId={conversation?.id}
+                  />
+                </div>
               ))}
             </div>
           )}
         </div>
 
         {error && (
-          <div className="mx-auto w-full max-w-3xl px-4">
+          <div className="mx-auto w-full max-w-[680px] px-4">
             <div className="mono flex items-center gap-3 rounded-[3px] border border-rule/40 bg-rule/5 px-3 py-2 text-[12px] text-rule">
               <span className="flex-1">{error}</span>
               <Button variant="ghost" size="sm" onClick={retry} className="text-rule hover:text-rule">

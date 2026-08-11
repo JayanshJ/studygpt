@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { motion } from "motion/react";
 import { Copy, Check, RefreshCw, Pencil, Download, X, Paperclip } from "lucide-react";
 import { Markdown } from "./Markdown";
@@ -8,7 +8,6 @@ import { SourcesPanel } from "./SourcesPanel";
 import { IconButton } from "@/components/ui/IconButton";
 import { Button } from "@/components/ui/Button";
 import { useMotion, fadeUp } from "@/lib/motion";
-import { estimateTokens, userTurnText } from "@/lib/tokens";
 import type { SourceEntry, Attachment } from "@/lib/db/schema";
 
 // Shallow equality on the attachments an edit produced vs. the originals, so
@@ -83,10 +82,6 @@ export function ChatMessage({
   const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
   const [copied, setCopied] = useState(false);
   const m = useMotion();
-  const tok = useMemo(
-    () => estimateTokens(userTurnText(content, attachments)),
-    [content, attachments],
-  );
 
   async function copy() {
     try {
@@ -127,70 +122,68 @@ export function ChatMessage({
 
   if (isUser && editing) {
     return (
-      <motion.div {...m} variants={fadeUp} className="flex justify-end">
-        <div className="w-[80%] max-w-[80%] rounded-r-[3px] rounded-l-[2px] border-l-2 border-rule bg-surface-2 px-4 py-2.5">
-          <textarea
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                commitEdit();
-              } else if (e.key === "Escape") {
-                e.preventDefault();
-                cancelEdit();
-              }
-            }}
-            rows={Math.min(8, Math.max(1, draft.split("\n").length))}
-            className="mono w-full resize-none rounded-[3px] border border-border bg-surface px-2 py-1 text-[13px] leading-6 text-ink outline-none focus:border-border-strong focus-visible:ring-2 focus-visible:ring-ring-accent/60"
-          />
-          {draftAttachments.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {draftAttachments.map((a, i) =>
-                a.type === "image" ? (
-                  <div key={i} className="relative">
-                    <img
-                      src={a.dataUrl}
-                      alt={a.name}
-                      className="max-h-20 rounded-[3px] border border-border object-contain"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeDraftAttachment(i)}
-                      aria-label="Remove attachment"
-                      className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-surface text-content-faint hover:text-rule"
-                    >
-                      <X size={10} />
-                    </button>
-                  </div>
-                ) : (
-                  <span
-                    key={i}
-                    className="mono flex items-center gap-1.5 rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[11px] text-content-muted"
+      <motion.div {...m} variants={fadeUp}>
+        <textarea
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              commitEdit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              cancelEdit();
+            }
+          }}
+          rows={Math.min(8, Math.max(1, draft.split("\n").length))}
+          className="mono w-full resize-none rounded-[3px] border border-border bg-surface-2/40 px-3 py-2 text-[13px] leading-6 text-ink outline-none focus:border-border-strong focus-visible:ring-2 focus-visible:ring-ring-accent/60"
+        />
+        {draftAttachments.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2 pl-5">
+            {draftAttachments.map((a, i) =>
+              a.type === "image" ? (
+                <div key={i} className="relative">
+                  <img
+                    src={a.dataUrl}
+                    alt={a.name}
+                    className="max-h-20 rounded-[3px] border border-border object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeDraftAttachment(i)}
+                    aria-label="Remove attachment"
+                    className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-surface text-content-faint hover:text-rule"
                   >
-                    <Paperclip size={11} /> {a.name} ({a.charCount.toLocaleString()}c)
-                    <button
-                      type="button"
-                      onClick={() => removeDraftAttachment(i)}
-                      aria-label="Remove attachment"
-                      className="text-content-faint hover:text-rule"
-                    >
-                      <X size={11} />
-                    </button>
-                  </span>
-                ),
-              )}
-            </div>
-          )}
-          <div className="mono mt-1 flex justify-end gap-3 text-[10px] tracking-wide text-content-faint">
-            <button onClick={cancelEdit} className="hover:text-content">
-              cancel
-            </button>
-            <button onClick={commitEdit} className="text-rule hover:opacity-80">
-              save
-            </button>
+                    <X size={10} />
+                  </button>
+                </div>
+              ) : (
+                <span
+                  key={i}
+                  className="mono flex items-center gap-1.5 rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[11px] text-content-muted"
+                >
+                  <Paperclip size={11} /> {a.name} ({a.charCount.toLocaleString()}c)
+                  <button
+                    type="button"
+                    onClick={() => removeDraftAttachment(i)}
+                    aria-label="Remove attachment"
+                    className="text-content-faint hover:text-rule"
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              ),
+            )}
           </div>
+        )}
+        <div className="mt-2 flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={cancelEdit}>
+            cancel
+          </Button>
+          <Button variant="accent" size="sm" onClick={commitEdit}>
+            save
+          </Button>
         </div>
       </motion.div>
     );
@@ -198,140 +191,54 @@ export function ChatMessage({
 
   if (isUser) {
     return (
-      <motion.div {...m} variants={fadeUp} className="group flex justify-end">
-        <div className="max-w-[80%] rounded-r-[3px] rounded-l-[2px] border-l-2 border-rule bg-surface-2 px-4 py-2.5">
-          <div className="mono mb-1 flex items-center justify-end gap-2 text-[10px] tracking-wide text-rule">
-            <span>you</span>
-            <span className="text-content-faint">· {tok.toLocaleString()} tok</span>
-            {onEdit && (
-              <IconButton
-                label="Edit and resend"
-                size="sm"
-                className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-content"
-                onClick={startEdit}
-              >
-                <Pencil size={12} />
-              </IconButton>
+      <motion.div {...m} variants={fadeUp} className="group relative">
+        <div className="border-l-2 border-rule pl-3 font-mono italic text-[13px] leading-relaxed text-content">
+          {content}
+        </div>
+        {attachments && attachments.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2 pl-5">
+            {attachments.map((a, i) =>
+              a.type === "image" ? (
+                <img
+                  key={i}
+                  src={a.dataUrl}
+                  alt={a.name}
+                  className="max-h-32 rounded-[3px] border border-border object-contain"
+                />
+              ) : (
+                <span
+                  key={i}
+                  className="mono flex items-center gap-1 rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[11px] text-content-muted"
+                >
+                  <Paperclip size={11} /> {a.name} ({a.charCount.toLocaleString()}c)
+                </span>
+              ),
             )}
           </div>
-          <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-ink">
-            {content}
+        )}
+        {onEdit && (
+          <div className="absolute -right-1 top-0 opacity-0 transition-opacity group-hover:opacity-100">
+            <IconButton variant="ghost" size="sm" label="Edit message" onClick={startEdit}>
+              <Pencil size={12} />
+            </IconButton>
           </div>
-          {attachments && attachments.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {attachments.map((a, i) =>
-                a.type === "image" ? (
-                  <img
-                    key={i}
-                    src={a.dataUrl}
-                    alt={a.name}
-                    className="max-h-32 rounded-[3px] border border-border object-contain"
-                  />
-                ) : (
-                  <span
-                    key={i}
-                    className="mono flex items-center gap-1 rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[11px] text-content-muted"
-                  >
-                    <Paperclip size={11} /> {a.name} ({a.charCount.toLocaleString()}c)
-                  </span>
-                ),
-              )}
-            </div>
-          )}
-        </div>
+        )}
       </motion.div>
     );
   }
 
   if (kind === "document") {
     return (
-      <motion.div {...m} variants={fadeUp} className="group flex justify-start">
-        <div className="max-w-[680px] rounded-[4px] border border-border bg-surface px-8 py-7 shadow-card">
-          <div className="mono mb-3 flex items-center gap-2 text-[10px] tracking-wide text-content-faint">
-            <span className="h-1 w-1 rounded-full bg-rule" />
-            document
-            <span>· {tok.toLocaleString()} tok</span>
-            <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <IconButton label={copied ? "Copied" : "Copy document"} size="sm" onClick={copy}>
-                {copied ? <Check size={13} /> : <Copy size={13} />}
-              </IconButton>
-              {canRegenerate && onRegenerate && !streaming && (
-                <IconButton label="Regenerate" size="sm" onClick={onRegenerate}>
-                  <RefreshCw size={13} />
-                </IconButton>
-              )}
-            </div>
-          </div>
-          {status && (
-            <div className="mono mb-2 flex items-center gap-1.5 text-[10px] tracking-wide text-content-faint">
-              <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-feynman" />
-              {STATUS_LABELS[status] ?? status}
-            </div>
-          )}
-          {reasoning && (
-            <details className="mb-3 rounded-[3px] border border-border bg-surface-2/60 px-3 py-2">
-              <summary className="mono cursor-pointer text-[10px] tracking-wide text-content-faint hover:text-content">
-                thinking
-              </summary>
-              <Markdown content={reasoning} className="prose-chat mt-2 text-[13px] text-content-muted" />
-            </details>
-          )}
-          <Markdown
-            content={content}
-            className="prose-chat text-ink"
-            streaming={streaming}
-            conversationTitle={conversationTitle}
-            conversationId={conversationId}
-          />
-          {streaming && (
-            <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
-          )}
-          {!streaming && id && (
-            <div className="mono mt-5 flex items-center gap-3 text-[12px] tracking-wide">
-              <Button asChild variant="primary" size="sm">
-                <a href={`/print/${id}`} target="_blank" rel="noopener noreferrer">
-                  <Download size={14} />
-                  download PDF
-                </a>
-              </Button>
-              <span className="text-content-faint">opens a clean page, then click save as PDF</span>
-            </div>
-          )}
-          {!streaming && <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />}
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div {...m} variants={fadeUp} className="group flex justify-start">
-      <div className="max-w-[85%] rounded-[4px] border border-border bg-surface px-5 py-4 shadow-card">
-        <div className="mono mb-1.5 flex items-center gap-1.5 text-[10px] tracking-wide text-content-faint">
-          <span className="h-1 w-1 rounded-full bg-rule" />
-          studygpt
-          <span>· {tok.toLocaleString()} tok</span>
-          <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <IconButton label={copied ? "Copied" : "Copy message"} size="sm" onClick={copy}>
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-            </IconButton>
-            {canRegenerate && onRegenerate && !streaming && (
-              <IconButton label="Regenerate" size="sm" onClick={onRegenerate}>
-                <RefreshCw size={13} />
-              </IconButton>
-            )}
-          </div>
-        </div>
+      <motion.div {...m} variants={fadeUp} className="group relative">
         {status && (
-          <div className="mono mb-2 flex items-center gap-1.5 text-[10px] tracking-wide text-content-faint">
-            <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-feynman" />
+          <div className="mono mb-2 flex items-center gap-1.5 text-[11px] text-content-faint">
+            <span className="h-1.5 w-1.5 rounded-full bg-rule animate-pulse" />
             {STATUS_LABELS[status] ?? status}
           </div>
         )}
         {reasoning && (
-          <details className="mb-3 rounded-[3px] border border-border bg-surface-2/60 px-3 py-2">
-            <summary className="mono cursor-pointer text-[10px] tracking-wide text-content-faint hover:text-content">
-              thinking
-            </summary>
+          <details className="mb-3 rounded-[3px] border border-border bg-surface-2/50 px-3 py-2">
+            <summary className="mono text-[11px] text-content-faint">thinking</summary>
             <Markdown content={reasoning} className="prose-chat mt-2 text-[13px] text-content-muted" />
           </details>
         )}
@@ -345,8 +252,75 @@ export function ChatMessage({
         {streaming && (
           <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
         )}
-        {!streaming && <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />}
-      </div>
+        {!streaming && (
+          <>
+            <div className="absolute right-0 top-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <IconButton variant="ghost" size="sm" label={copied ? "Copied" : "Copy document"} onClick={copy}>
+                {copied ? <Check size={13} /> : <Copy size={13} />}
+              </IconButton>
+              {canRegenerate && onRegenerate && (
+                <IconButton variant="ghost" size="sm" label="Regenerate" onClick={onRegenerate}>
+                  <RefreshCw size={13} />
+                </IconButton>
+              )}
+            </div>
+            {id && (
+              <div className="mono mt-5 flex items-center gap-3 text-[12px] tracking-wide">
+                <Button asChild variant="primary" size="sm">
+                  <a href={`/print/${id}`} target="_blank" rel="noopener noreferrer">
+                    <Download size={14} />
+                    download PDF
+                  </a>
+                </Button>
+                <span className="text-content-faint">opens a clean page, then click save as PDF</span>
+              </div>
+            )}
+            <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />
+          </>
+        )}
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div {...m} variants={fadeUp} className="group relative">
+      {status && (
+        <div className="mono mb-2 flex items-center gap-1.5 text-[11px] text-content-faint">
+          <span className="h-1.5 w-1.5 rounded-full bg-rule animate-pulse" />
+          {STATUS_LABELS[status] ?? status}
+        </div>
+      )}
+      {reasoning && (
+        <details className="mb-3 rounded-[3px] border border-border bg-surface-2/50 px-3 py-2">
+          <summary className="mono text-[11px] text-content-faint">thinking</summary>
+          <Markdown content={reasoning} className="prose-chat mt-2 text-[13px] text-content-muted" />
+        </details>
+      )}
+      <Markdown
+        content={content}
+        className="prose-chat text-ink"
+        streaming={streaming}
+        conversationTitle={conversationTitle}
+        conversationId={conversationId}
+      />
+      {streaming && (
+        <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
+      )}
+      {!streaming && (
+        <>
+          <div className="absolute right-0 top-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <IconButton variant="ghost" size="sm" label={copied ? "Copied" : "Copy message"} onClick={copy}>
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+            </IconButton>
+            {canRegenerate && onRegenerate && (
+              <IconButton variant="ghost" size="sm" label="Regenerate" onClick={onRegenerate}>
+                <RefreshCw size={13} />
+              </IconButton>
+            )}
+          </div>
+          <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />
+        </>
+      )}
     </motion.div>
   );
 }

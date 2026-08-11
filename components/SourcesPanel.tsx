@@ -51,7 +51,7 @@ export function SourcesPanel({
     }
     const usedCount = usedByMaterial.size;
     return (
-      <div className="mt-3 border-t border-border pt-2">
+      <div className="mt-4">
         <button
           onClick={() => setOpen((o) => !o)}
           className="mono flex items-center gap-1.5 text-[10px] tracking-wide text-content-faint transition-colors hover:text-content"
@@ -79,7 +79,7 @@ export function SourcesPanel({
                           isUsed ? "bg-feynman" : "border border-content-faint",
                         )}
                       />
-                      <span className={isUsed ? "text-feynman" : "text-content-faint"}>
+                      <span className={isUsed ? "text-content-muted" : "text-content-faint"}>
                         {mat.title}
                       </span>
                       {isUsed && (
@@ -121,7 +121,7 @@ export function SourcesPanel({
   // Fallback: only injected sources are known (parent hasn't wired materials
   // yet). Show the original snippet list.
   return (
-    <div className="mt-3 border-t border-border pt-2">
+    <div className="mt-4">
       <button
         onClick={() => setOpen((o) => !o)}
         className="mono flex items-center gap-1.5 text-[10px] tracking-wide text-content-faint transition-colors hover:text-content"
@@ -135,7 +135,7 @@ export function SourcesPanel({
           <motion.ul {...m} variants={fadeUp} className="mt-2 flex flex-col gap-2 overflow-hidden">
             {sources.map((s, i) => (
               <li key={`${s.materialId}-${s.ordinal}-${i}`} className="rounded-[3px] bg-surface-2/60 px-2.5 py-2">
-                <p className="mono text-[10px] tracking-wide text-feynman">{s.title}</p>
+                <p className="mono text-[10px] tracking-wide text-content-muted">{s.title}</p>
                 <p className="mt-1 text-[12px] leading-relaxed text-content-muted line-clamp-3">
                   “{s.snippet}”
                 </p>
