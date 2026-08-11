@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { ChevronLeft, Compass, Maximize2, Search, Share2 } from "lucide-react";
 import type { Project } from "@/lib/db/schema";
 import {
   detectCommunities,
@@ -18,9 +19,32 @@ import {
 import { ConceptGraph } from "@/components/graph/ConceptGraph";
 import { ClusterOverview } from "@/components/graph/ClusterOverview";
 import { DetailPanel } from "@/components/graph/DetailPanel";
+import { NextUpPanel } from "@/components/graph/NextUpPanel";
+import {
+  computeStatuses,
+  computeCoverage,
+  computeClusterStatuses,
+  type ConceptStatus,
+  type ClusterStatus,
+} from "@/lib/graph/learning-path";
 import { filterEdges } from "@/lib/graph/relations";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/Select";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Switch } from "@/components/ui/Switch";
+import { Badge } from "@/components/ui/Badge";
+import { motion } from "motion/react";
+import { useMotion, fadeUp } from "@/lib/motion";
 
 type View = { kind: "overview" } | { kind: "cluster"; clusterId: string };
+
+const NONE = "__none__";
 
 export default function GraphPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -35,6 +59,14 @@ export default function GraphPage() {
   // inferred-similarity + AMBIGUOUS edges). Reset when switching projects.
   const [showSemSim, setShowSemSim] = useState(false);
   const [showAmbiguous, setShowAmbiguous] = useState(false);
+  // Learning-path mode (default on — the graph should be useful by default).
+  // Reset on project switch so a stale overlay doesn't survive a reload.
+  const [pathMode, setPathMode] = useState(true);
+  // Fullscreen overlay for the cluster-view graph (CSS-overlay, not the browser
+  // Fullscreen API — no permission prompt and works inside arbitrary layout).
+  // Reset when switching projects so a stale overlay doesn't survive a reload.
+  const [fullscreen, setFullscreen] = useState(false);
+  const m = useMotion();
 
   // Load project list once.
   useEffect(() => {
@@ -59,6 +91,8 @@ export default function GraphPage() {
     setSelectedConceptId(null);
     setShowSemSim(false);
     setShowAmbiguous(false);
+    setFullscreen(false);
+    setPathMode(true);
     try {
       const res = await fetch(`/api/concepts?projectId=${encodeURIComponent(id)}`);
       if (res.ok) setData(await res.json());
@@ -134,6 +168,29 @@ export default function GraphPage() {
     [data],
   );
 
+  // Learning-path: status per concept (strict transitive prerequisite_of
+  // gating), global coverage, and per-cluster status/frontier. All client-side
+  // from data /api/concepts already returns. Recomputed when data or clusters
+  // change — so after a review, the next graph load reflects new mastery.
+  const statuses = useMemo(
+    () => (data ? computeStatuses(data.concepts, data.edges) : new Map<string, ConceptStatus>()),
+    [data],
+  );
+  const coverage = useMemo(() => computeCoverage(statuses), [statuses]);
+  const clusterStatuses = useMemo(
+    () => (data ? computeClusterStatuses(clusters, statuses, data.edges, labelById) : []),
+    [clusters, statuses, data, labelById],
+  );
+  const clusterStatusById = useMemo(
+    () => new Map(clusterStatuses.map((c) => [c.clusterId, c])),
+    [clusterStatuses],
+  );
+  // The open cluster's status (for the drill-down Next-up panel).
+  const activeClusterStatus: ClusterStatus | null = useMemo(
+    () => (view.kind === "cluster" ? clusterStatusById.get(view.clusterId) ?? null : null),
+    [view, clusterStatusById],
+  );
+
   const selectedClusterName = useMemo(() => {
     if (view.kind !== "cluster") return null;
     return clusterById.get(view.clusterId)?.name ?? null;
@@ -141,6 +198,13 @@ export default function GraphPage() {
 
   function handleNodeClick(id: string) {
     setSelectedConceptId(id);
+  }
+
+  // Drill into a cluster and immediately select its top ready concept
+  // (the cluster's "start here" entrypoint from the overview card).
+  function handleSelectStartHere(clusterId: string, conceptId: string) {
+    setView({ kind: "cluster", clusterId });
+    setSelectedConceptId(conceptId);
   }
 
   function handleSearch(e: React.FormEvent) {
@@ -158,106 +222,133 @@ export default function GraphPage() {
   const hasGraph = !!data && data.concepts.length > 0;
 
   return (
-    <div className="graph-paper min-h-screen">
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        <div className="mb-6 flex items-center justify-between">
-          <Link href="/" className="mono text-[12px] tracking-wide text-ink-3 transition-colors hover:text-ink">
-            ← Back to chat
-          </Link>
-          <span className="mono flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
-            <span className="h-1.5 w-1.5 rounded-full bg-feynman" />
-            Concept graph
-          </span>
-        </div>
+    <div className="graph-paper h-full overflow-y-auto">
+      <div className="mx-auto max-w-6xl px-4 py-6 tab:px-6 tab:py-10">
+        <motion.div {...m} variants={fadeUp} className="mb-5 flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
+          <Share2 size={16} className="text-feynman" />
+          Concept graph
+        </motion.div>
 
-        <h1 className="mb-6 text-[1.6rem] leading-tight text-ink">Concept graph</h1>
+        <motion.h1 {...m} variants={fadeUp} className="mb-6 font-serif text-[1.6rem] leading-tight text-ink">
+          Concept graph
+        </motion.h1>
+
+        {hasGraph && pathMode && (
+          <motion.div {...m} variants={fadeUp} className="mb-4 flex flex-wrap items-center gap-3 rounded-[4px] border border-border bg-surface px-4 py-3">
+            <div className="flex items-baseline gap-2">
+              <span className="font-serif text-[1.4rem] leading-none text-ink">{coverage.percent}%</span>
+              <span className="mono text-[11px] text-content-faint">mastered</span>
+            </div>
+            <div className="mono flex items-center gap-3 text-[11px] text-content-muted">
+              <span><span className="text-rule">{coverage.ready}</span> ready</span>
+              <span>{coverage.inProgress} in progress</span>
+              <span className="text-content-faint">{coverage.locked} locked</span>
+            </div>
+            {/* Slim coverage bar */}
+            <div className="ml-auto flex h-1.5 w-40 overflow-hidden rounded-[2px] bg-surface-2">
+              <div className="bg-feynman" style={{ width: `${coverage.percent}%` }} />
+            </div>
+          </motion.div>
+        )}
 
         {/* Controls: project picker + view switch + search */}
-        <div className="mb-5 flex flex-wrap items-center gap-3 border-b border-line pb-4">
-          <select
-            value={projectId ?? ""}
-            onChange={(e) => setProjectId(e.target.value || null)}
-            className="mono rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] text-ink outline-none focus:border-ink/40"
+        <div className="mb-5 flex flex-wrap items-center gap-3 border-b border-border pb-4">
+          <Select
+            value={projectId ?? NONE}
+            onValueChange={(v) => setProjectId(v === NONE ? null : v)}
           >
-            <option value="">choose a project…</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="Project" className="w-[200px]">
+              <SelectValue placeholder="choose a project…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>choose a project…</SelectItem>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           {view.kind === "cluster" && (
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 setView({ kind: "overview" });
                 setSelectedConceptId(null);
               }}
-              className="mono rounded-[3px] border border-line bg-paper px-3 py-1.5 text-[12px] tracking-wide text-ink transition-colors hover:border-ink/40"
             >
-              ← overview
-            </button>
+              <ChevronLeft size={14} />
+              overview
+            </Button>
           )}
 
           <form onSubmit={handleSearch} className="flex gap-2">
-            <input
+            <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="find a concept…"
-              className="mono rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-ink-3 focus:border-ink/40"
+              className="w-[180px]"
             />
-            <button
-              type="submit"
-              className="mono rounded-[3px] border border-line bg-paper px-2 py-1.5 text-[12px] tracking-wide text-ink transition-colors hover:border-ink/40"
-            >
+            <Button type="submit" variant="secondary" size="sm">
+              <Search size={14} />
               find
-            </button>
+            </Button>
           </form>
 
+          {hasGraph && (
+            <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-content-muted">
+              <Switch checked={pathMode} onCheckedChange={setPathMode} />
+              <Compass size={12} />
+              learning path
+            </label>
+          )}
+
           {data && hasGraph && (
-            <span className="mono text-[11px] text-ink-3">
+            <Badge tone="neutral" className="ml-auto">
               {data.concepts.length} concepts · {data.edges.length} edges · {clusters.length} clusters
-            </span>
+            </Badge>
           )}
 
           {view.kind === "cluster" && (
-            <div className="flex items-center gap-3">
-              <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
-                <input
-                  type="checkbox"
-                  checked={showSemSim}
-                  onChange={(e) => setShowSemSim(e.target.checked)}
-                  className="h-3 w-3 accent-ink"
-                />
+            <div className="flex w-full items-center gap-4 pt-1">
+              <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-content-muted">
+                <Switch checked={showSemSim} onCheckedChange={setShowSemSim} />
                 show similar
               </label>
-              <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
-                <input
-                  type="checkbox"
-                  checked={showAmbiguous}
-                  onChange={(e) => setShowAmbiguous(e.target.checked)}
-                  className="h-3 w-3 accent-ink"
-                />
+              <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-content-muted">
+                <Switch checked={showAmbiguous} onCheckedChange={setShowAmbiguous} />
                 show ambiguous
               </label>
-              <span className="mono text-[11px] text-ink-3">
+              <span className="mono text-[11px] text-content-faint">
                 showing {visibleEdgeCount} of {active.kind === "concept" ? active.edges.length : 0} edges
               </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setFullscreen(true)}
+                aria-label="Fullscreen graph"
+                className="ml-auto"
+              >
+                <Maximize2 size={14} />
+                fullscreen
+              </Button>
             </div>
           )}
         </div>
 
         {/* Body: graph + detail panel */}
         {!projectId ? (
-          <p className="mono py-10 text-center text-[12px] text-ink-3">choose a project to view its concept graph</p>
+          <p className="mono py-10 text-center text-[12px] text-content-faint">choose a project to view its concept graph</p>
         ) : loading ? (
-          <p className="mono py-10 text-center text-[12px] text-ink-3">loading graph…</p>
+          <p className="mono py-10 text-center text-[12px] text-content-faint">loading graph…</p>
         ) : loadError ? (
           <p className="mono py-10 text-center text-[12px] text-rule">{loadError}</p>
         ) : !hasGraph ? (
-          <div className="mono py-10 text-center text-[12px] text-ink-3">
+          <div className="mono py-10 text-center text-[12px] text-content-faint">
             no concept graph yet —{" "}
-            <Link href="/projects" className="text-ink-2 underline">
+            <Link href="/projects" className="text-content-muted underline">
               build one on /projects
             </Link>
           </div>
@@ -273,6 +364,9 @@ export default function GraphPage() {
                 setView({ kind: "cluster", clusterId: id });
                 setSelectedConceptId(null);
               }}
+              clusterStatuses={clusterStatusById}
+              pathMode={pathMode}
+              onSelectStartHere={handleSelectStartHere}
             />
             <DetailPanel
               conceptId={selectedConceptId}
@@ -289,12 +383,19 @@ export default function GraphPage() {
               onNodeClick={handleNodeClick}
               showSemSim={showSemSim}
               showAmbiguous={showAmbiguous}
+              fullscreen={fullscreen}
+              onExitFullscreen={() => setFullscreen(false)}
+              statuses={pathMode ? statuses : null}
+              pathMode={pathMode}
             />
-            <DetailPanel
-              conceptId={selectedConceptId}
-              clusterName={selectedClusterName}
-              onSelectConcept={setSelectedConceptId}
-            />
+            <div className="flex flex-col gap-3">
+              {pathMode && <NextUpPanel clusterStatus={activeClusterStatus} onSelect={setSelectedConceptId} />}
+              <DetailPanel
+                conceptId={selectedConceptId}
+                clusterName={selectedClusterName}
+                onSelectConcept={setSelectedConceptId}
+              />
+            </div>
           </div>
         )}
       </div>
