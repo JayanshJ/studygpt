@@ -98,10 +98,22 @@ export function ClusterOverview({
         }
 
         return (
-          <motion.button
+          <motion.div
             key={cluster.id}
-            type="button"
+            role="button"
+            tabIndex={0}
             onClick={() => onSelectCluster(cluster.id)}
+            onKeyDown={(e) => {
+              // Keyboard-activate the card like a button (Enter / Space). Only
+              // act when the card itself is focused — not when a nested focusable
+              // element (the start-here button) is, so Enter on start-here
+              // doesn't double-fire the card's drill-in.
+              if (e.target !== e.currentTarget) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelectCluster(cluster.id);
+              }
+            }}
             className="group rounded-[4px] border border-border bg-surface p-4 text-left shadow-card transition-[border-color,transform] duration-fast ease-out hover:border-border-strong focus:outline-none focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-ring-accent/40"
           >
             <div className="mono line-clamp-2 text-[13px] leading-tight text-ink">
@@ -180,7 +192,7 @@ export function ClusterOverview({
                 no internal links — flat drill-down
               </div>
             )}
-          </motion.button>
+          </motion.div>
         );
       })}
     </motion.div>
