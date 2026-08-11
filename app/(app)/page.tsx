@@ -790,9 +790,9 @@ export default function Page() {
 
         {error && (
           <div className="mx-auto w-full max-w-[680px] px-4">
-            <div className="mono flex items-center gap-3 rounded-[3px] border border-rule/40 bg-rule/5 px-3 py-2 text-[12px] text-rule">
+            <div className="mono flex items-center gap-3 rounded-[3px] border border-danger/40 bg-danger/5 px-3 py-2 text-[12px] text-danger">
               <span className="flex-1">{error}</span>
-              <Button variant="ghost" size="sm" onClick={retry} className="text-rule hover:text-rule">
+              <Button variant="ghost" size="sm" onClick={retry} className="text-danger hover:text-danger">
                 <RefreshCw size={13} />
                 retry
               </Button>

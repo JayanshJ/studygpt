@@ -33,7 +33,7 @@ export default function PrintPage() {
       .catch(() => setErr("Document not found."));
   }, [params.id]);
 
-  if (err) return <div className="mono p-8 text-sm text-rule">{err}</div>;
+  if (err) return <div className="mono p-8 text-sm text-danger">{err}</div>;
   if (!doc) {
     return (
       <div className="min-h-screen bg-surface-2">

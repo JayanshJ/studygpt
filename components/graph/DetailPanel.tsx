@@ -124,7 +124,7 @@ export function DetailPanel({ conceptId, clusterName, onSelectConcept }: DetailP
   if (error && detail) {
     return (
       <div className="flex flex-col gap-2">
-        <div className="mono text-[10px] text-rule">{error}</div>
+        <div className="mono text-[10px] text-danger">{error}</div>
         <div className="opacity-40">{detailBody}</div>
       </div>
     );
@@ -133,7 +133,7 @@ export function DetailPanel({ conceptId, clusterName, onSelectConcept }: DetailP
   if (error && !detail) {
     return (
       <Card className="p-4">
-        <div className="mono text-[12px] text-rule">{error}</div>
+        <div className="mono text-[12px] text-danger">{error}</div>
       </Card>
     );
   }

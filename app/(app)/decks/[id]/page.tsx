@@ -69,7 +69,7 @@ export default function DeckOverviewPage() {
         {loading ? (
           <Skeleton className="h-8 w-2/3" />
         ) : err || !overview ? (
-          <p className="mono text-[13px] text-rule">{err ?? "Deck not found."}</p>
+          <p className="mono text-[13px] text-danger">{err ?? "Deck not found."}</p>
         ) : (
           <>
             <motion.h1 {...m} variants={fadeUp} className="mb-2 font-serif text-[1.6rem] leading-tight text-ink">

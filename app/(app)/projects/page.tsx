@@ -301,10 +301,10 @@ export default function ProjectsPage() {
     const ext = extById.get(materialId);
     if (!ext || ext.status === "pending") return null;
     if (ext.status === "extracting")
-      return <span className="mono flex items-center gap-1 text-[10px] text-feynman"><Loader2 size={10} className="animate-spin" />extracting…</span>;
+      return <span className="mono flex items-center gap-1 text-[10px] text-amber"><Loader2 size={10} className="animate-spin" />extracting…</span>;
     if (ext.status === "error")
       return (
-        <span className="mono max-w-[140px] truncate text-[10px] text-rule" title={ext.error ?? ""}>
+        <span className="mono max-w-[140px] truncate text-[10px] text-danger" title={ext.error ?? ""}>
           extraction failed
         </span>
       );
@@ -538,8 +538,8 @@ export default function ProjectsPage() {
                           mat.status === "ready"
                             ? "text-content-muted"
                             : mat.status === "processing"
-                              ? "text-feynman"
-                              : "text-rule",
+                              ? "text-amber"
+                              : "text-danger",
                         )}
                       >
                         {mat.status}
@@ -550,7 +550,7 @@ export default function ProjectsPage() {
                       {renderConceptChip(mat.id)}
                       {mat.status === "error" && mat.error && (
                         <span
-                          className="mono max-w-[180px] truncate text-[10px] text-rule"
+                          className="mono max-w-[180px] truncate text-[10px] text-danger"
                           title={mat.error}
                         >
                           {mat.error}

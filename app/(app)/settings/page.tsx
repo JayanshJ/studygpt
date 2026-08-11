@@ -187,7 +187,7 @@ export default function SettingsPage() {
               <Check size={15} />
               Save
             </Button>
-            {error && <span className="mono text-[12px] text-rule">{error}</span>}
+            {error && <span className="mono text-[12px] text-danger">{error}</span>}
           </div>
         </form>
       </div>

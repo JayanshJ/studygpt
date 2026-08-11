@@ -362,7 +362,7 @@ export default function GraphPage() {
         ) : loading ? (
           <p className="mono py-10 text-center text-[12px] text-content-faint">loading graph…</p>
         ) : loadError ? (
-          <p className="mono py-10 text-center text-[12px] text-rule">{loadError}</p>
+          <p className="mono py-10 text-center text-[12px] text-danger">{loadError}</p>
         ) : !hasGraph ? (
           <div className="mono py-10 text-center text-[12px] text-content-faint">
             no concept graph yet —{" "}
