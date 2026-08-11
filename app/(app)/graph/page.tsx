@@ -19,13 +19,14 @@ import {
 import { ConceptGraph } from "@/components/graph/ConceptGraph";
 import { ClusterOverview } from "@/components/graph/ClusterOverview";
 import { DetailPanel } from "@/components/graph/DetailPanel";
-import { NextUpPanel } from "@/components/graph/NextUpPanel";
+import { LearningPathTrajectory } from "@/components/graph/LearningPathTrajectory";
 import {
   computeStatuses,
   computeCoverage,
   computeClusterStatuses,
+  computeTrajectory,
   type ConceptStatus,
-  type ClusterStatus,
+  type Trajectory,
 } from "@/lib/graph/learning-path";
 import { filterEdges } from "@/lib/graph/relations";
 import {
@@ -45,6 +46,12 @@ import { useMotion, fadeUp } from "@/lib/motion";
 type View = { kind: "overview" } | { kind: "cluster"; clusterId: string };
 
 const NONE = "__none__";
+
+// Build the chat prompt handed off from a trajectory row's "ask" link. The
+// chat is project-scoped, so RAG explains from that project's materials.
+function buildAskPrompt(label: string, step: number) {
+  return `I'm working through my study path and I'm on "${label}" (step ${step}). Explain it from my materials, then quiz me to check my understanding.`;
+}
 
 export default function GraphPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -185,10 +192,21 @@ export default function GraphPage() {
     () => new Map(clusterStatuses.map((c) => [c.clusterId, c])),
     [clusterStatuses],
   );
-  // The open cluster's status (for the drill-down Next-up panel).
-  const activeClusterStatus: ClusterStatus | null = useMemo(
-    () => (view.kind === "cluster" ? clusterStatusById.get(view.clusterId) ?? null : null),
-    [view, clusterStatusById],
+  // conceptId -> cluster name (for the trajectory's per-row cluster tag).
+  const clusterNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of data?.concepts ?? []) {
+      const cid = c2cluster.get(c.id);
+      const name = cid ? clusterById.get(cid)?.name ?? null : null;
+      if (name) m.set(c.id, name);
+    }
+    return m;
+  }, [data, c2cluster, clusterById]);
+  // The linear learning path: remaining concepts in topological order, with
+  // the "you are here" marker. Client-side; reflows when data/statuses change.
+  const trajectory: Trajectory | null = useMemo(
+    () => (data ? computeTrajectory(data.concepts, data.edges, statuses, labelById, clusterNameById) : null),
+    [data, statuses, labelById, clusterNameById],
   );
 
   const selectedClusterName = useMemo(() => {
@@ -368,11 +386,20 @@ export default function GraphPage() {
               pathMode={pathMode}
               onSelectStartHere={handleSelectStartHere}
             />
-            <DetailPanel
-              conceptId={selectedConceptId}
-              clusterName={selectedClusterName}
-              onSelectConcept={setSelectedConceptId}
-            />
+            <div className="flex flex-col gap-3">
+              <LearningPathTrajectory
+                trajectory={trajectory}
+                projectId={projectId}
+                selectedId={selectedConceptId}
+                onSelect={setSelectedConceptId}
+                buildAskPrompt={buildAskPrompt}
+              />
+              <DetailPanel
+                conceptId={selectedConceptId}
+                clusterName={selectedClusterName}
+                onSelectConcept={setSelectedConceptId}
+              />
+            </div>
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-[1fr_300px]">
@@ -389,7 +416,13 @@ export default function GraphPage() {
               pathMode={pathMode}
             />
             <div className="flex flex-col gap-3">
-              {pathMode && <NextUpPanel clusterStatus={activeClusterStatus} onSelect={setSelectedConceptId} />}
+              <LearningPathTrajectory
+                trajectory={trajectory}
+                projectId={projectId}
+                selectedId={selectedConceptId}
+                onSelect={setSelectedConceptId}
+                buildAskPrompt={buildAskPrompt}
+              />
               <DetailPanel
                 conceptId={selectedConceptId}
                 clusterName={selectedClusterName}
