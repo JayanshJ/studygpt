@@ -225,3 +225,12 @@ test("frontier tie on dependents breaks by total degree then label asc", () => {
   // b (degree 1) before d (degree 0)
   assert.deepEqual(c1.frontier.map((f) => f.conceptId), ["b", "d"]);
 });
+
+test("frontier tie on dependents AND degree breaks by label asc", () => {
+  // d and e both have 0 prerequisite_of out-degree and 0 total degree; "d" < "e".
+  const single: Cluster[] = [{ id: "c1", name: "C1", conceptCount: 2, conceptIds: ["e", "d"] }];
+  const labels = new Map([["d", "D"], ["e", "E"]]);
+  const s = statusesMap({ d: "ready", e: "ready" });
+  const cs = computeClusterStatuses(single, s, [], labels);
+  assert.deepEqual(cs[0].frontier.map((f) => f.conceptId), ["d", "e"]);
+});

@@ -152,8 +152,10 @@ export function computeClusterStatuses(
   }
 
   return clusters.map((cl) => {
-    const clusterStatuses = cl.conceptIds.map((id) => statuses.get(id)).filter(Boolean) as ConceptStatus[];
-    const coverage = computeCoverage(new Map(cl.conceptIds.map((id, i) => [id, clusterStatuses[i]])));
+    const clusterEntries = cl.conceptIds
+      .map((id) => [id, statuses.get(id)] as const)
+      .filter(([, s]) => s != null) as [string, ConceptStatus][];
+    const coverage = computeCoverage(new Map(clusterEntries));
 
     const readyIds = cl.conceptIds.filter((id) => statuses.get(id) === "ready");
     const frontier: FrontierItem[] = readyIds
