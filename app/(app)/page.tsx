@@ -1,10 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Sidebar } from "@/components/Sidebar";
+import { motion } from "motion/react";
+import { MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw } from "lucide-react";
+import { ConversationListPane } from "@/components/shell/ConversationListPane";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { ModeToggle } from "@/components/ModeToggle";
+import { IconButton } from "@/components/ui/IconButton";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/Dialog";
+import { useMotion, fadeUp } from "@/lib/motion";
 import type {
   Attachment,
   Conversation,
@@ -62,7 +69,23 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [assistantStreamId, setAssistantStreamId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [convSheetOpen, setConvSheetOpen] = useState(false);
+  // Desktop conversation pane collapse. Persisted to localStorage so a reload
+  // honours the user's choice; defaults to expanded (SSR-safe — read in an
+  // effect to avoid a hydration mismatch). Mobile uses the slide-in sheet, not
+  // this collapse, so it only affects the tab+ pane.
+  const [paneCollapsed, setPaneCollapsed] = useState(false);
+  const togglePane = useCallback(() => {
+    setPaneCollapsed((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("studygpt.pane.collapsed", next ? "1" : "0");
+      } catch {
+        /* ignore storage failures (private mode, etc.) */
+      }
+      return next;
+    });
+  }, []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectMaterialCount, setActiveProjectMaterialCount] = useState<number | null>(null);
@@ -84,6 +107,7 @@ export default function Page() {
   // don't go through the composer, so they reuse this value to preserve the
   // turn's web-search preference instead of reverting to the default.
   const lastWebRef = useRef<boolean>(true);
+  const m = useMotion();
 
   const loadConversations = useCallback(async () => {
     try {
@@ -140,6 +164,50 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConvId, conversations, activeId]);
 
+  // Handoff from /graph "ask in chat": ?projectId=<pid>&q=<prompt>. Create a
+  // project-scoped conversation and prefill the composer so the user reviews +
+  // sends. Runs once on mount; the graph link never also sets ?c, so it does
+  // not conflict with the ?c restore. Strips q/projectId from the URL after so
+  // a reload doesn't re-create the conversation. (ChatInput seeds initialText
+  // exactly once via its seededRef, so clearing pendingPrompt later is a no-op
+  // — the textarea keeps the prompt.)
+  const handoffRef = useRef(false);
+  useEffect(() => {
+    if (handoffRef.current || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q");
+    if (!q) return; // no handoff → let the ?c restore path handle mount
+    handoffRef.current = true;
+    const pid = params.get("projectId");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (pid) setActiveProjectId(pid);
+    setPendingPrompt(q);
+    void (async () => {
+      try {
+        const res = await fetch("/api/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: pid ?? null }),
+        });
+        if (!res.ok) return;
+        const conv: Conversation = await res.json();
+        setConversations((prev) => [conv, ...prev]);
+        setActiveId(conv.id);
+        setConversation(conv);
+        setMessages([]);
+        const url = new URL(window.location.href);
+        url.searchParams.set("c", conv.id);
+        url.searchParams.delete("q");
+        url.searchParams.delete("projectId");
+        window.history.replaceState(null, "", url);
+      } catch {
+        /* ignore — user can start a conversation manually */
+      } finally {
+        setPendingPrompt(null);
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadProjects();
@@ -149,6 +217,16 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadModels();
   }, [loadModels]);
+
+  // Restore the pane collapse preference on mount (SSR-safe).
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPaneCollapsed(localStorage.getItem("studygpt.pane.collapsed") === "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // When a project conversation is active, fetch its material count for the
   // header chip. Reset to null for standalone conversations.
@@ -184,7 +262,7 @@ export default function Page() {
     setActiveId(id);
     syncUrl(id);
     setError(null);
-    setSidebarOpen(false);
+    setConvSheetOpen(false);
     const res = await fetch(`/api/conversations/${id}`);
     const data = await res.json();
     setConversation(data.conversation);
@@ -511,60 +589,70 @@ export default function Page() {
   })();
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
-      {/* Desktop sidebar */}
-      <div className="hidden md:flex">
-        <Sidebar
-          conversations={conversations}
-          activeId={activeId}
-          onSelect={selectConversation}
-          onNew={newConversation}
-          onDelete={deleteConversation}
-          query={query}
-          onQueryChange={setQuery}
-          projects={projects}
-          activeProjectId={activeProjectId}
-          onProjectChange={setActiveProjectId}
-          loading={convLoading}
-        />
+    <div className="flex h-full min-w-0">
+      {/* Desktop conversation pane — collapsible (hidden below `tab`; mobile
+          uses the slide-in sheet). Collapsed renders a slim rail with an
+          expand button where the pane used to be. */}
+      <div className="hidden tab:flex">
+        {paneCollapsed ? (
+          <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-2 py-3">
+            <IconButton label="Show conversations" onClick={togglePane}>
+              <PanelLeftOpen size={17} strokeWidth={1.75} />
+            </IconButton>
+          </div>
+        ) : (
+          <ConversationListPane
+            conversations={conversations}
+            activeId={activeId}
+            onSelect={selectConversation}
+            onNew={newConversation}
+            onDelete={deleteConversation}
+            query={query}
+            onQueryChange={setQuery}
+            projects={projects}
+            activeProjectId={activeProjectId}
+            onProjectChange={setActiveProjectId}
+            loading={convLoading}
+          />
+        )}
       </div>
 
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-30 bg-black/40 md:hidden"
-            onClick={() => setSidebarOpen(false)}
-          />
-          <div className="fixed left-0 top-0 z-40 h-full md:hidden">
-            <Sidebar
-              conversations={conversations}
-              activeId={activeId}
-              onSelect={selectConversation}
-              onNew={newConversation}
-              onDelete={deleteConversation}
-              query={query}
-              onQueryChange={setQuery}
-              projects={projects}
-              activeProjectId={activeProjectId}
-              onProjectChange={setActiveProjectId}
-              loading={convLoading}
-              collapsible={false}
-            />
-          </div>
-        </>
-      )}
-
-      <main className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-2.5">
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5 tab:px-5">
           <div className="flex min-w-0 items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open sidebar"
-              className="mono text-ink-3 transition-colors hover:text-ink md:hidden"
+            {/* Mobile: conversation list slides in from the left (desktop pane
+                is always visible at tab+). */}
+            <Dialog open={convSheetOpen} onOpenChange={setConvSheetOpen}>
+              <DialogTrigger asChild>
+                <IconButton label="Conversations" className="tab:hidden">
+                  <MessageSquare size={17} strokeWidth={1.75} />
+                </IconButton>
+              </DialogTrigger>
+              <DialogContent side="left" showClose={false} className="p-0">
+                <ConversationListPane
+                  conversations={conversations}
+                  activeId={activeId}
+                  onSelect={selectConversation}
+                  onNew={newConversation}
+                  onDelete={deleteConversation}
+                  query={query}
+                  onQueryChange={setQuery}
+                  projects={projects}
+                  activeProjectId={activeProjectId}
+                  onProjectChange={setActiveProjectId}
+                  loading={convLoading}
+                />
+              </DialogContent>
+            </Dialog>
+            {/* Desktop: collapse the conversation pane (shown only while
+                expanded — the collapsed rail carries the expand button). */}
+            <IconButton
+              label="Hide conversations"
+              onClick={togglePane}
+              className={paneCollapsed ? "hidden" : "hidden tab:inline-flex"}
             >
-              ☰
-            </button>
+              <PanelLeftClose size={17} strokeWidth={1.75} />
+            </IconButton>
             <span className="truncate text-[15px] italic text-ink-2">
               {conversation?.title ?? "Select or start a conversation"}
             </span>
@@ -577,11 +665,11 @@ export default function Page() {
                 return (
                   <a
                     href="/projects"
-                    className="mono hidden items-center gap-1 rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[10px] tracking-wide text-feynman transition-colors hover:text-ink sm:inline-flex"
+                    className="mono hidden items-center gap-1 rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[10px] tracking-wide text-feynman transition-colors hover:text-content sm:inline-flex"
                   >
                     {p.name}
                     {activeProjectMaterialCount !== null && (
-                      <span className="text-ink-3">
+                      <span className="text-content-faint">
                         · {activeProjectMaterialCount} material{activeProjectMaterialCount === 1 ? "" : "s"}
                       </span>
                     )}
@@ -592,17 +680,17 @@ export default function Page() {
                 value={conversation.model}
                 onChange={(e) => changeModel(e.target.value)}
                 aria-label="Model"
-                className="mono max-w-[180px] truncate rounded-[2px] border border-line bg-paper-2 px-2 py-0.5 text-[10px] tracking-wide text-ink-3 outline-none focus:border-ink/40"
+                className="mono max-w-[180px] truncate rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[10px] tracking-wide text-content-faint outline-none transition-colors hover:border-border-strong focus:border-border-strong"
               >
                 {/* Ensure the current model is always selectable even if the
                     backend list is empty / doesn't include it. */}
-                {!models.some((m) => m.id === conversation.model) && (
+                {!models.some((mdl) => mdl.id === conversation.model) && (
                   <option value={conversation.model}>{conversation.model}</option>
                 )}
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.id}
-                    {m.vision ? "  ◉ vision" : ""}
+                {models.map((mdl) => (
+                  <option key={mdl.id} value={mdl.id}>
+                    {mdl.id}
+                    {mdl.vision ? "  ◉ vision" : ""}
                   </option>
                 ))}
               </select>
@@ -611,11 +699,14 @@ export default function Page() {
           )}
         </header>
 
-        <div ref={scrollRef} className="graph-paper flex-1 overflow-y-auto px-4 py-8">
-          <div className="mx-auto flex max-w-3xl flex-col gap-5">
-            {!conversation && (
-              <div className="mx-auto mt-20 w-full max-w-[520px]">
-                <div className="page-card px-8 py-10 sm:px-10">
+        <div
+          ref={scrollRef}
+          className="graph-paper flex-1 overflow-y-auto px-4 py-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] tab:pb-8"
+        >
+          {!conversation ? (
+            <div className="flex min-h-full items-center justify-center">
+              <motion.div {...m} variants={fadeUp} className="w-full max-w-[560px]">
+                <Card accent className="px-8 py-10 sm:px-10">
                   <p className="eyebrow">Study Notebook</p>
                   <h1 className="hero-title mt-4">
                     Study anything,
@@ -628,13 +719,10 @@ export default function Page() {
                     back.
                   </p>
                   <div className="mt-7">
-                    <button
-                      type="button"
-                      onClick={() => newConversation()}
-                      className="btn-primary"
-                    >
-                      + start a conversation
-                    </button>
+                    <Button variant="primary" onClick={() => newConversation()}>
+                      <Plus size={15} strokeWidth={2} />
+                      start a conversation
+                    </Button>
                   </div>
                   <div className="mt-6 flex flex-wrap gap-2">
                     {CHAT_SUGGESTIONS.map((s) => (
@@ -642,87 +730,93 @@ export default function Page() {
                         key={s}
                         type="button"
                         onClick={() => welcomeChip(s)}
-                        className="chip"
+                        className="mono rounded-[3px] border border-border bg-surface px-2.5 py-1 text-[12px] text-content-muted transition-[border-color,background-color] duration-fast ease-out hover:border-border-strong hover:bg-surface-2 hover:text-content"
                       >
                         {s}
                       </button>
                     ))}
                   </div>
-                </div>
-              </div>
-            )}
-            {conversation && messages.length === 0 && !streaming && (
-              <div className="mx-auto mt-20 w-full max-w-[520px] text-center">
-                <p className="eyebrow">Ask</p>
-                <h2 className="mt-4 text-[1.4rem] leading-tight text-ink">
-                  Ask your first question.
-                </h2>
-                <div className="mt-6 flex flex-wrap justify-center gap-2">
-                  {(conversation.mode === "feynman" ? FEYNMAN_SUGGESTIONS : CHAT_SUGGESTIONS).map(
-                    (s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => sendMessage(s, [])}
-                        className="chip"
-                      >
-                        {s}
-                      </button>
-                    ),
-                  )}
-                </div>
-              </div>
-            )}
-            {messages.map((m) => (
-              <ChatMessage
-                key={m.id}
-                id={m.id}
-                role={m.role}
-                content={m.content}
-                attachments={m.attachments}
-                kind={m.kind}
-                streaming={streaming && m.id === assistantStreamId}
-                sources={m.sources}
-                status={m.status}
-                reasoning={m.reasoning}
-                allMaterials={activeProjectMaterials}
-                canRegenerate={m.id === lastAssistantId}
-                onRegenerate={regenerate}
-                onEdit={(content, attachments) => editMessage(m.id, content, attachments)}
-                conversationTitle={conversation?.title}
-                conversationId={conversation?.id}
-              />
-            ))}
-          </div>
+                </Card>
+              </motion.div>
+            </div>
+          ) : (
+            <div className="mx-auto flex max-w-3xl flex-col gap-5">
+              {messages.length === 0 && !streaming && (
+                <motion.div {...m} variants={fadeUp} className="mx-auto mt-20 w-full max-w-[520px] text-center">
+                  <p className="eyebrow">Ask</p>
+                  <h2 className="mt-4 text-[1.4rem] leading-tight text-ink">
+                    Ask your first question.
+                  </h2>
+                  <div className="mt-6 flex flex-wrap justify-center gap-2">
+                    {(conversation.mode === "feynman" ? FEYNMAN_SUGGESTIONS : CHAT_SUGGESTIONS).map(
+                      (s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => sendMessage(s, [])}
+                          className="mono rounded-[3px] border border-border bg-surface px-2.5 py-1 text-[12px] text-content-muted transition-[border-color,background-color] duration-fast ease-out hover:border-border-strong hover:bg-surface-2 hover:text-content"
+                        >
+                          {s}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </motion.div>
+              )}
+              {messages.map((m) => (
+                <ChatMessage
+                  key={m.id}
+                  id={m.id}
+                  role={m.role}
+                  content={m.content}
+                  attachments={m.attachments}
+                  kind={m.kind}
+                  streaming={streaming && m.id === assistantStreamId}
+                  sources={m.sources}
+                  status={m.status}
+                  reasoning={m.reasoning}
+                  allMaterials={activeProjectMaterials}
+                  canRegenerate={m.id === lastAssistantId}
+                  onRegenerate={regenerate}
+                  onEdit={(content, attachments) => editMessage(m.id, content, attachments)}
+                  conversationTitle={conversation?.title}
+                  conversationId={conversation?.id}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {error && (
           <div className="mx-auto w-full max-w-3xl px-4">
             <div className="mono flex items-center gap-3 rounded-[3px] border border-rule/40 bg-rule/5 px-3 py-2 text-[12px] text-rule">
               <span className="flex-1">{error}</span>
-              <button onClick={retry} className="underline hover:opacity-80">
+              <Button variant="ghost" size="sm" onClick={retry} className="text-rule hover:text-rule">
+                <RefreshCw size={13} />
                 retry
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
-        <ChatInput
-          onSend={sendMessage}
-          onStop={stop}
-          streaming={streaming}
-          disabled={streaming || !conversation}
-          projectId={conversation?.project_id ?? null}
-          transcriptionAvailable={transcriptionAvailable}
-          initialText={pendingPrompt ?? undefined}
-          placeholder={
-            conversation
-              ? conversation.mode === "feynman"
-                ? "Tell the tutor what concept you want to learn…"
-                : "Ask about a concept… (Enter to send)"
-              : "Start a conversation first"
-          }
-        />
+        <div className="pb-[calc(0.5rem+env(safe-area-inset-bottom))] tab:pb-0">
+          <ChatInput
+            onSend={sendMessage}
+            onStop={stop}
+            streaming={streaming}
+            disabled={streaming || !conversation}
+            projectId={conversation?.project_id ?? null}
+            transcriptionAvailable={transcriptionAvailable}
+            initialText={pendingPrompt ?? undefined}
+            placeholder={
+              conversation
+                ? conversation.mode === "feynman"
+                  ? "Tell the tutor what concept you want to learn…"
+                  : "Ask about a concept… (Enter to send)"
+                : "Start a conversation first"
+            }
+          />
+        </div>
       </main>
     </div>
   );
