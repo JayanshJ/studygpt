@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeStatuses, computeCoverage, computeClusterStatuses } from "./learning-path";
+import { computeStatuses, computeCoverage, computeClusterStatuses, computeTrajectory } from "./learning-path";
 import type { Cluster } from "./clusters";
 
 // Helper: build concepts with bands and prerequisite_of edges concisely.
@@ -247,4 +247,144 @@ test("frontier tie on dependents AND degree breaks by label asc", () => {
   const s = statusesMap({ d: "ready", e: "ready" });
   const cs = computeClusterStatuses(single, s, [], labels);
   assert.deepEqual(cs[0].frontier.map((f) => f.conceptId), ["d", "e"]);
+});
+
+// Trajectory helper: like `fixture`, but also runs computeStatuses and builds
+// labelById (label = id uppercased) + an empty clusterNameById for convenience.
+function trajFixture(opts: {
+  bands: Record<string, "strong" | "learning" | "slipping" | "untested" | "unknown">;
+  prereqs?: string[];
+  edges?: { source: string; target: string; relation: string }[];
+  labelById?: Map<string, string>;
+  clusterNameById?: Map<string, string>;
+}) {
+  const { concepts, edges } = fixture(opts);
+  const statuses = computeStatuses(concepts, edges);
+  const ids = Object.keys(opts.bands);
+  const labelById = opts.labelById ?? new Map(ids.map((id) => [id, id.toUpperCase()]));
+  const clusterNameById = opts.clusterNameById ?? new Map<string, string>();
+  return { concepts, edges, statuses, labelById, clusterNameById };
+}
+
+test("trajectory: linear chain a->b->c, all untested", () => {
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "untested", b: "untested", c: "untested" }, prereqs: ["a->b", "b->c"] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["a", "b", "c"]);
+  assert.deepEqual(t.items.map((i) => i.step), [1, 2, 3]);
+  assert.equal(t.doneCount, 0);
+  assert.equal(t.items[0].isYouAreHere, true);
+});
+
+test("trajectory: diamond a->{b,c}->d orders a first, d last", () => {
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "untested", b: "untested", c: "untested", d: "untested" }, prereqs: ["a->b", "a->c", "b->d", "c->d"] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.equal(t.items[0].conceptId, "a");
+  assert.equal(t.items[3].conceptId, "d");
+  // b and c tie on out-degree(1) + total-degree(2) → label asc (B<C)
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["a", "b", "c", "d"]);
+});
+
+test("trajectory: foundational-first — higher prerequisite_of out-degree emits first", () => {
+  // a is prereq of x and y (out-degree 2); b is prereq of z (out-degree 1).
+  // a and b both available → a emits first.
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "untested", b: "untested", x: "untested", y: "untested", z: "untested" }, prereqs: ["a->x", "a->y", "b->z"] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.equal(t.items[0].conceptId, "a");
+  assert.equal(t.items[1].conceptId, "b");
+});
+
+test("trajectory: tie on out-degree breaks by total degree desc", () => {
+  // a and p both available, both out-degree 0; a has a part_of edge (total degree 1), b has none (0).
+  // part_of does not order, so all three are available; sort by total degree desc then label asc.
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "untested", b: "untested", p: "untested" }, edges: [{ source: "a", target: "p", relation: "part_of" }] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["a", "p", "b"]); // a(1),p(1) by label, then b(0)
+});
+
+test("trajectory: full tie (no edges) breaks by label asc", () => {
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { c: "untested", a: "untested", b: "untested" } });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["a", "b", "c"]);
+});
+
+test("trajectory: in_progress concept is isYouAreHere; step numbers after done", () => {
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "strong", b: "learning", c: "untested" }, prereqs: ["a->b", "b->c"] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.equal(t.doneCount, 1);
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["b", "c"]);
+  assert.equal(t.items[0].status, "in_progress");
+  assert.equal(t.items[0].isYouAreHere, true);
+  assert.equal(t.items[0].step, 2); // doneCount(1) + 0 + 1
+  assert.equal(t.items[1].status, "locked");
+  assert.equal(t.items[1].step, 3);
+});
+
+test("trajectory: first ready is isYouAreHere when no in_progress", () => {
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "untested", b: "untested" }, prereqs: ["a->b"] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["a", "b"]);
+  assert.equal(t.items[0].status, "ready");
+  assert.equal(t.items[0].isYouAreHere, true);
+  assert.equal(t.items[1].status, "locked");
+  assert.equal(t.items[1].isYouAreHere, false);
+});
+
+test("trajectory: exactly one isYouAreHere (the first in_progress wins over a later ready)", () => {
+  // a in_progress (no prereqs), b ready (no prereqs) — both available; a is isYouAreHere.
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "learning", b: "untested" } });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  const here = t.items.filter((i) => i.isYouAreHere);
+  assert.equal(here.length, 1);
+  assert.equal(here[0].conceptId, "a");
+});
+
+test("trajectory: all mastered → empty items, doneCount N, no isYouAreHere", () => {
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "strong", b: "strong" }, prereqs: ["a->b"] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.equal(t.doneCount, 2);
+  assert.deepEqual(t.items, []);
+});
+
+test("trajectory: no prerequisite_of edges → all available, ordered by tiebreak", () => {
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { x: "untested", y: "untested", z: "untested" } });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["x", "y", "z"]);
+  assert.equal(t.items.every((i) => i.status === "ready"), true);
+});
+
+test("trajectory: prerequisite_of cycle among not-done appended at end by label (no hang)", () => {
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "untested", b: "untested", c: "untested" }, prereqs: ["a->b", "b->a"] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  // c available (no prereq) emits first; a,b cycle members appended by label asc.
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["c", "a", "b"]);
+  assert.equal(t.items[0].isYouAreHere, true);
+  assert.equal(t.items[1].status, "locked");
+  assert.equal(t.items[2].status, "locked");
+});
+
+test("trajectory: part_of / generalizes do not affect ordering", () => {
+  // generalizes b->a does NOT make b precede a; both available → label asc (A<B).
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "untested", b: "untested" }, edges: [{ source: "b", target: "a", relation: "generalizes" }] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["a", "b"]);
+});
+
+test("trajectory: self-loop prereq ignored", () => {
+  const { concepts, edges, statuses, labelById, clusterNameById } = trajFixture({ bands: { a: "untested" }, prereqs: ["a->a"] });
+  const t = computeTrajectory(concepts, edges, statuses, labelById, clusterNameById);
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["a"]);
+  assert.equal(t.items[0].status, "ready");
+});
+
+test("trajectory: clusterName + doneCount + step numbering with mixed mastered/remaining", () => {
+  const f = fixture({ bands: { a: "strong", b: "strong", c: "untested", d: "untested" }, prereqs: ["c->d"] });
+  const statuses = computeStatuses(f.concepts, f.edges);
+  const labelById = new Map([["a", "A"], ["b", "B"], ["c", "C"], ["d", "D"]]);
+  const clusterNameById = new Map([["c", "Databases"], ["d", "Databases"]]);
+  const t = computeTrajectory(f.concepts, f.edges, statuses, labelById, clusterNameById);
+  assert.equal(t.doneCount, 2);
+  assert.deepEqual(t.items.map((i) => i.conceptId), ["c", "d"]);
+  assert.deepEqual(t.items.map((i) => i.step), [3, 4]);
+  assert.equal(t.items[0].clusterName, "Databases");
+  assert.equal(t.items[0].isYouAreHere, true);
 });

@@ -185,3 +185,133 @@ export function computeClusterStatuses(
     };
   });
 }
+
+export interface TrajectoryItem {
+  conceptId: string;
+  label: string;
+  status: ConceptStatus;
+  step: number; // 1-based overall position (done + remaining) — used in the chat prompt
+  clusterName: string | null;
+  isYouAreHere: boolean;
+}
+
+export interface Trajectory {
+  doneCount: number; // mastered concepts (collapsed into the "✓ N done" header)
+  items: TrajectoryItem[]; // remaining concepts, in learning order
+}
+
+// A linear learning order of the remaining (not-mastered) concepts: a best-first
+// topological sort over the prerequisite_of subgraph restricted to not-done
+// concepts. At each step the most foundational available concept emits first
+// (prerequisite_of out-degree desc, then total degree desc, then label asc).
+// Mastered concepts collapse into doneCount. part_of/generalizes do not order
+// (only prerequisite_of). Self-loops ignored. Cycles among not-done concepts
+// never become available; they are appended at the end by label asc so the
+// trajectory stays complete (no infinite loop). isYouAreHere = the first
+// in_progress item if any, else the first ready item.
+export function computeTrajectory(
+  concepts: { id: string }[],
+  edges: { source: string; target: string; relation: string }[],
+  statuses: Map<string, ConceptStatus>,
+  labelById: Map<string, string>,
+  clusterNameById: Map<string, string>,
+): Trajectory {
+  let doneCount = 0;
+  const notDone: string[] = [];
+  const statusOf = new Map<string, ConceptStatus>();
+  for (const c of concepts) {
+    const st = statuses.get(c.id);
+    if (st == null) continue;
+    if (st === "mastered") doneCount++;
+    else {
+      notDone.push(c.id);
+      statusOf.set(c.id, st);
+    }
+  }
+  if (notDone.length === 0) return { doneCount, items: [] };
+
+  const notDoneSet = new Set(notDone);
+
+  // Graph-wide prerequisite_of out-degree + total degree (tiebreak inputs).
+  const prereqOut = new Map<string, number>();
+  const totalDeg = new Map<string, number>();
+  for (const e of edges) {
+    if (e.source === e.target) continue;
+    totalDeg.set(e.source, (totalDeg.get(e.source) ?? 0) + 1);
+    totalDeg.set(e.target, (totalDeg.get(e.target) ?? 0) + 1);
+    if (e.relation === "prerequisite_of") {
+      prereqOut.set(e.source, (prereqOut.get(e.source) ?? 0) + 1);
+    }
+  }
+
+  // Not-done prerequisite adjacency (Kahn over the not-done subgraph).
+  const prereqs = new Map<string, Set<string>>();
+  const dependents = new Map<string, Set<string>>();
+  const inDeg = new Map<string, number>();
+  for (const id of notDone) {
+    prereqs.set(id, new Set());
+    dependents.set(id, new Set());
+    inDeg.set(id, 0);
+  }
+  for (const e of edges) {
+    if (e.relation !== "prerequisite_of" || e.source === e.target) continue;
+    if (notDoneSet.has(e.target) && notDoneSet.has(e.source)) {
+      prereqs.get(e.target)!.add(e.source);
+      dependents.get(e.source)!.add(e.target);
+    }
+  }
+  for (const id of notDone) inDeg.set(id, prereqs.get(id)!.size);
+
+  const labelOf = (id: string) => labelById.get(id) ?? id;
+  // Best-first: most foundational (prereq out-degree desc, total degree desc, label asc).
+  const better = (a: string, b: string): number => {
+    const oa = prereqOut.get(a) ?? 0, ob = prereqOut.get(b) ?? 0;
+    if (ob !== oa) return ob - oa;
+    const da = totalDeg.get(a) ?? 0, db = totalDeg.get(b) ?? 0;
+    if (db !== da) return db - da;
+    return labelOf(a).localeCompare(labelOf(b));
+  };
+
+  let avail = notDone.filter((id) => inDeg.get(id) === 0).sort(better);
+  const emitted: string[] = [];
+  const emittedSet = new Set<string>();
+  while (avail.length > 0) {
+    const id = avail.shift()!;
+    emitted.push(id);
+    emittedSet.add(id);
+    const newlyAvail: string[] = [];
+    for (const dep of dependents.get(id)!) {
+      const d = (inDeg.get(dep) ?? 0) - 1;
+      inDeg.set(dep, d);
+      if (d === 0) newlyAvail.push(dep);
+    }
+    if (newlyAvail.length > 0) avail = [...avail, ...newlyAvail].sort(better);
+  }
+
+  // Cycle fallback: append unemitted not-done concepts by label asc.
+  if (emittedSet.size < notDone.length) {
+    const rest = notDone.filter((id) => !emittedSet.has(id)).sort((a, b) => labelOf(a).localeCompare(labelOf(b)));
+    emitted.push(...rest);
+  }
+
+  let youAreHereIdx = -1;
+  for (let i = 0; i < emitted.length; i++) {
+    if (statusOf.get(emitted[i]) === "in_progress") { youAreHereIdx = i; break; }
+  }
+  if (youAreHereIdx === -1) {
+    for (let i = 0; i < emitted.length; i++) {
+      if (statusOf.get(emitted[i]) === "ready") { youAreHereIdx = i; break; }
+    }
+  }
+
+  const items: TrajectoryItem[] = emitted.map((id, i) => ({
+    conceptId: id,
+    label: labelOf(id),
+    status: statusOf.get(id)!,
+    step: doneCount + i + 1,
+    clusterName: clusterNameById.get(id) ?? null,
+    isYouAreHere: i === youAreHereIdx,
+  }));
+
+  return { doneCount, items };
+}
