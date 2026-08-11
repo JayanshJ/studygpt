@@ -14,9 +14,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import cytoscape from "cytoscape";
 import fcose from "cytoscape-fcose";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { cn } from "@/lib/cn";
 import { measureConceptNode, NODE_BORDER } from "@/lib/graph/node-size";
 import { HIERARCHICAL, edgeOpacity, filterEdges } from "@/lib/graph/relations";
 import { readGraphTokens, buildCytoscapeStyle } from "@/lib/graph/graph-tokens";
+import type { ConceptStatus } from "@/lib/graph/learning-path";
 import type { GraphConcept, GraphEdge } from "@/lib/graph/clusters";
 
 // Register the fcose layout extension once at module load.
@@ -47,6 +51,18 @@ interface ConceptGraphProps {
   onNodeClick: (id: string) => void;
   showSemSim: boolean;
   showAmbiguous: boolean;
+  // Learning-path overlay (path mode): per-concept status applied to nodes
+  // in-place, prerequisite_of edges emphasized, peer edges faded. Null/off
+  // clears the classes. Applied via a dedicated effect (not the elements
+  // useMemo) so a status flip after a review doesn't trigger a relayout.
+  statuses?: Map<string, ConceptStatus> | null;
+  pathMode?: boolean;
+  // When true, the canvas mounts as a fixed full-viewport overlay (Esc or the
+  // X button exits). The component stays mounted in the same tree position, so
+  // Cytoscape persists and the ResizeObserver refits the existing instance to
+  // the larger box — no destroy/re-layout flash.
+  fullscreen?: boolean;
+  onExitFullscreen?: () => void;
 }
 
 export function ConceptGraph({
@@ -56,6 +72,10 @@ export function ConceptGraph({
   onNodeClick,
   showSemSim,
   showAmbiguous,
+  statuses = null,
+  pathMode = false,
+  fullscreen = false,
+  onExitFullscreen,
 }: ConceptGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
@@ -171,8 +191,28 @@ export function ConceptGraph({
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
+    // Responsive canvas: Cytoscape draws at a fixed pixel size, so when the
+    // container resizes (viewport change, pane collapse, mobile reflow) we
+    // must tell it to resize its viewport and re-fit the layout to the new
+    // box. Coalesce ticks into a single rAF so a fluid resize doesn't spam.
+    let resizeRaf = 0;
+    const resizeObserver = new ResizeObserver(() => {
+      if (!cyRef.current) return;
+      if (resizeRaf) return;
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = 0;
+        const c = cyRef.current;
+        if (!c) return;
+        c.resize();
+        c.fit(undefined, 40);
+      });
+    });
+    resizeObserver.observe(container);
+
     return () => {
       observer.disconnect();
+      resizeObserver.disconnect();
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
       cy.destroy();
       cyRef.current = null;
     };
@@ -218,11 +258,69 @@ export function ConceptGraph({
     cy.center(ele);
   }, [selectedId]);
 
+  // Apply learning-path status to nodes + path-mode edge emphasis in place.
+  // Kept out of the elements useMemo so a status flip (e.g. after a review
+  // changes mastery) updates classes without rebuilding elements / relaying
+  // out. Nodes get status-<status>; in_progress has no class (band already
+  // signals it). In path mode, prerequisite_of (hierarchical) edges get
+  // path-backbone and peer edges get path-faded; both cleared when path mode
+  // is off.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.nodes().forEach((n) => {
+      n.removeClass("status-ready status-locked status-mastered");
+      if (!pathMode || !statuses) return;
+      const st = statuses.get(n.id());
+      if (st === "ready") n.addClass("status-ready");
+      else if (st === "locked") n.addClass("status-locked");
+      else if (st === "mastered") n.addClass("status-mastered");
+      // in_progress: no class (band border shows).
+    });
+    cy.edges().forEach((e) => {
+      e.removeClass("path-backbone path-faded");
+      if (!pathMode) return;
+      // The `hierarchical` class was assigned at element-build time for
+      // prerequisite_of/part_of/generalizes. Only prerequisite_of is the
+      // backbone; fade everything else (peer edges) in path mode.
+      if (e.data("relation") === "prerequisite_of") e.addClass("path-backbone");
+      else e.addClass("path-faded");
+    });
+  }, [statuses, pathMode]);
+
+  // Esc exits fullscreen. (The X button is the other exit path.)
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onExitFullscreen?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen, onExitFullscreen]);
+
   return (
-    <div className="relative h-[620px] w-full rounded-[3px] border border-line bg-paper-2">
+    <div
+      className={cn(
+        "relative w-full rounded-[4px] border border-border bg-surface-2",
+        fullscreen
+          ? "fixed inset-0 z-50 h-screen w-screen rounded-none border-0"
+          : "h-[60vh] min-h-[420px] shadow-card tab:h-[70vh]",
+      )}
+    >
       <div ref={containerRef} className="h-full w-full" />
+      {fullscreen && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onExitFullscreen}
+          aria-label="Exit fullscreen"
+          className="absolute right-3 top-3 z-10"
+        >
+          <X size={16} />
+        </Button>
+      )}
       {concepts.length === 0 && (
-        <div className="mono pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-ink-3">
+        <div className="mono pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-content-faint">
           nothing to show
         </div>
       )}
