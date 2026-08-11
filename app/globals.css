@@ -8,68 +8,33 @@
    --------------------------------------------------------------------- */
 
 :root {
-  --paper: #f2f0e7;     /* aged graph-paper background */
-  --paper-2: #fbfaf3;   /* fresh paper — message cards */
-  --paper-3: #eae8dc;   /* deeper paper — sidebar/binding */
-  --ink: #1f2020;       /* near-black, warm-neutral */
-  --ink-2: #565850;     /* muted ink — secondary text */
-  --ink-3: #6f7166;     /* faint — captions (bumped for WCAG AA on paper) */
-  --rule: #c8443a;      /* red notebook margin rule (signature accent) */
-  --feynman: #2e5c8a;   /* chalk blue — Feynman-mode accent */
-  --line: #d7d5c8;      /* hairlines */
-  --grid: rgba(31, 32, 32, 0.045); /* faint graph-paper grid */
-  --shadow-card: 0 1px 2px rgba(31, 32, 32, 0.06), 0 1px 1px rgba(31, 32, 32, 0.03);
+  /* core */
+  --paper: #ffffff;
+  --paper-2: #f6f6f7;
+  --paper-3: #ececef;
+  --ink: #18181b;
+  --ink-2: #52525b;
+  --ink-3: #8a8a93;
+  --rule: #f97316;        /* orange accent */
+  --feynman: #0f9d76;     /* muted emerald — mastered/strong */
+  --amber: #c08a00;       /* muted amber — learning */
+  --rose: #c0445a;        /* muted rose — slipping / danger */
+  --line: #e6e6e9;
+  --grid: transparent;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
 
-  /* ---- Studio Notebook additions (semantic aliases over the paper/ink core) --
-     These never introduce new colors — they name the core tokens by role so the
-     UI primitives (components/ui/*) stay theme-agnostic. The core vars above
-     are unchanged (the Cytoscape bridge reads them by name). */
-  --surface: var(--paper-2);     /* cards / panes */
-  --surface-2: var(--paper-3);   /* rail / deeper paper */
-  --border: var(--line);
-  --border-strong: color-mix(in oklab, var(--ink) 22%, var(--line));
-  --ring: var(--ink);            /* focus ring */
-  --ring-accent: var(--rule);    /* accent focus ring */
-  --content: var(--ink);
-  --content-muted: var(--ink-2);
-  --content-faint: var(--ink-3);
-  --accent: var(--rule);
-  --accent-2: var(--feynman);
-
-  /* Mastery bands — semantic colors for graph borders, mastery tables, source
-     chips. Mapped onto the core palette so they theme with everything else. */
-  --band-strong: var(--feynman);     /* confident — chalk blue */
-  --band-learning: color-mix(in oklab, var(--feynman) 55%, var(--ink-2)); /* in progress */
-  --band-slipping: var(--rule);      /* needs work — red rule */
-  --band-untested: var(--ink-3);     /* not yet seen */
-  --band-unknown: var(--ink-3);      /* no data */
-
-  /* Motion tokens — exposed to Tailwind via --ease-* / --duration-* below. */
+  /* motion (unchanged values) */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --dur-fast: 120ms;
   --dur: 200ms;
   --dur-slow: 320ms;
-}
 
-html[data-theme="dark"] {
-  --paper: #1a1b1b;
-  --paper-2: #252626;
-  --paper-3: #131414;
-  --ink: #ecead8;
-  --ink-2: #a8a99e;
-  --ink-3: #9a9b8e;
-  --rule: #d9685a;
-  --feynman: #7aa8d8;
-  --line: #3a3b39;
-  --grid: rgba(236, 234, 216, 0.05);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.34), 0 1px 1px rgba(0, 0, 0, 0.20);
-
-  /* Studio Notebook semantic aliases (warm charcoal, not flat zinc). */
+  /* semantic aliases */
   --surface: var(--paper-2);
   --surface-2: var(--paper-3);
   --border: var(--line);
-  --border-strong: color-mix(in oklab, var(--ink) 30%, var(--line));
+  --border-strong: color-mix(in oklab, var(--ink) 16%, var(--line));
   --ring: var(--ink);
   --ring-accent: var(--rule);
   --content: var(--ink);
@@ -77,18 +42,49 @@ html[data-theme="dark"] {
   --content-faint: var(--ink-3);
   --accent: var(--rule);
   --accent-2: var(--feynman);
+  --danger: var(--rose);
 
+  /* mastery bands */
   --band-strong: var(--feynman);
-  --band-learning: color-mix(in oklab, var(--feynman) 60%, var(--ink-2));
-  --band-slipping: var(--rule);
+  --band-learning: var(--amber);
+  --band-slipping: var(--rose);
   --band-untested: var(--ink-3);
   --band-unknown: var(--ink-3);
+}
 
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --dur-fast: 120ms;
-  --dur: 200ms;
-  --dur-slow: 320ms;
+html[data-theme="dark"] {
+  --paper: #0b0b0c;
+  --paper-2: #161618;
+  --paper-3: #1f1f22;
+  --ink: #e6e6ea;
+  --ink-2: #9a9aa2;
+  --ink-3: #6a6a72;
+  --rule: #ff7a3d;
+  --feynman: #34c896;
+  --amber: #d9a441;
+  --rose: #e06a7c;
+  --line: #262629;
+  --grid: transparent;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.5);
+
+  --surface: var(--paper-2);
+  --surface-2: var(--paper-3);
+  --border: var(--line);
+  --border-strong: color-mix(in oklab, var(--ink) 20%, var(--line));
+  --ring: var(--ink);
+  --ring-accent: var(--rule);
+  --content: var(--ink);
+  --content-muted: var(--ink-2);
+  --content-faint: var(--ink-3);
+  --accent: var(--rule);
+  --accent-2: var(--feynman);
+  --danger: var(--rose);
+
+  --band-strong: var(--feynman);
+  --band-learning: var(--amber);
+  --band-slipping: var(--rose);
+  --band-untested: var(--ink-3);
+  --band-unknown: var(--ink-3);
 }
 
 @theme inline {
@@ -100,6 +96,9 @@ html[data-theme="dark"] {
   --color-ink-3: var(--ink-3);
   --color-rule: var(--rule);
   --color-feynman: var(--feynman);
+  --color-amber: var(--amber);
+  --color-rose: var(--rose);
+  --color-danger: var(--danger);
   --color-line: var(--line);
 
   /* Studio Notebook semantic tokens → Tailwind color utilities
@@ -160,11 +159,6 @@ body {
     linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
   background-size: 22px 22px;
   background-position: -1px -1px;
-}
-
-/* The red notebook margin rule — a vertical line on the sidebar's edge. */
-.margin-rule {
-  border-right: 2px solid var(--rule);
 }
 
 /* Mono chrome helper. */
@@ -256,11 +250,11 @@ body {
 .prose-chat code {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.85em;
-  background: rgba(31, 32, 32, 0.06);
+  background: rgba(0, 0, 0, 0.06);
   padding: 0.1em 0.32em;
   border-radius: 3px;
 }
-html[data-theme="dark"] .prose-chat code { background: rgba(236, 234, 216, 0.10); }
+html[data-theme="dark"] .prose-chat code { background: rgba(255, 255, 255, 0.08); }
 .prose-chat pre {
   background: var(--paper-3);
   border: 1px solid var(--line);
@@ -317,11 +311,11 @@ html[data-theme="dark"] .prose-chat code { background: rgba(236, 234, 216, 0.10)
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #c9c6b6; border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: #b4b1a1; }
+::-webkit-scrollbar-thumb { background: #c9c9cc; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #b0b0b4; }
 ::-webkit-scrollbar-track { background: transparent; }
-html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #3a3b39; }
-html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4a4b49; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #3a3a3e; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4a4a4e; }
 
 /* Focus rings — ink, not browser blue */
 :where(button, a, input, textarea, select):focus-visible {
@@ -346,7 +340,7 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4a4b49; }
     content: counter(page) " / " counter(pages);
     font-family: ui-monospace, monospace;
     font-size: 9pt;
-    color: #8b8d83;
+    color: #8a8a93;
   }
 }
 
@@ -355,13 +349,13 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4a4b49; }
   html, body { background: #ffffff !important; }
   .print-sheet { max-width: none; margin: 0; padding: 0; background: #ffffff !important; }
 
-  .prose-chat { font-size: 11pt; line-height: 1.5; color: #1f2020; }
+  .prose-chat { font-size: 11pt; line-height: 1.5; color: #18181b; }
   .prose-chat p { orphans: 2; widows: 2; }
 
   /* Document title — large, with a solid rule so page 1 reads as a document. */
   .prose-chat h1 {
     font-size: 22pt; line-height: 1.2; margin: 0 0 0.6em;
-    border-bottom: 1.5px solid #1f2020; padding-bottom: 0.3em;
+    border-bottom: 1.5px solid #18181b; padding-bottom: 0.3em;
     break-after: avoid;
   }
   .prose-chat h2 { font-size: 15pt; margin-top: 1.3em; break-after: avoid; }
@@ -377,9 +371,9 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4a4b49; }
   .prose-chat table { width: 100%; font-size: 10pt; }
   .prose-chat th, .prose-chat td { word-break: break-word; }
   .prose-chat th {
-    background: #eae8dc !important;
+    background: #f6f6f7 !important;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   .prose-chat img { max-width: 100%; }
-  .prose-chat a { color: #1f2020; text-decoration: underline; }
+  .prose-chat a { color: #18181b; text-decoration: underline; }
 }
