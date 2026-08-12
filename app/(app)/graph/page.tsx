@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, Compass, Maximize2, Search, Share2 } from "lucide-react";
+import { ChevronLeft, Compass, List, Maximize2, Search, Share2 } from "lucide-react";
 import type { Project } from "@/lib/db/schema";
 import {
   detectCommunities,
@@ -20,6 +20,7 @@ import { ConceptGraph } from "@/components/graph/ConceptGraph";
 import { ClusterOverview } from "@/components/graph/ClusterOverview";
 import { DetailPanel } from "@/components/graph/DetailPanel";
 import { LearningPathTrajectory } from "@/components/graph/LearningPathTrajectory";
+import { MasteryList, type Row } from "@/components/graph/MasteryList";
 import {
   computeStatuses,
   computeCoverage,
@@ -73,6 +74,14 @@ export default function GraphPage() {
   // Fullscreen API — no permission prompt and works inside arbitrary layout).
   // Reset when switching projects so a stale overlay doesn't survive a reload.
   const [fullscreen, setFullscreen] = useState(false);
+  // List/graph view toggle. When on, the overview body is replaced by the
+  // per-concept mastery list (the old /mastery page, folded in here). Default
+  // from ?view=list (set by the /mastery redirect). Persists across project
+  // switches — only the rows re-fetch.
+  const [listMode, setListMode] = useState(false);
+  const [masteryRows, setMasteryRows] = useState<Row[] | null>(null);
+  const [masteryLoading, setMasteryLoading] = useState(false);
+  const [masteryError, setMasteryError] = useState<string | null>(null);
   const m = useMotion();
 
   // Load project list once.
@@ -83,12 +92,15 @@ export default function GraphPage() {
       .catch(() => setProjects([]));
   }, []);
 
-  // Pick projectId from ?projectId= on first load.
+  // Pick projectId from ?projectId= and view from ?view=list on first load.
   useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("projectId");
-    // Syncing a URL param into state on mount is a legitimate one-shot read of an external system.
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("projectId");
+    const v = params.get("view");
+    // Syncing URL params into state on mount is a legitimate one-shot read of an external system.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q) setProjectId(q);
+    if (v === "list") setListMode(true);
   }, []);
 
   const loadData = useCallback(async (id: string) => {
@@ -117,6 +129,30 @@ export default function GraphPage() {
     if (projectId) void loadData(projectId);
     else setData(null);
   }, [projectId, loadData]);
+
+  // Lazy mastery fetch: only when listMode is on (keeps graph mode free of an
+  // extra request). Re-runs on project change while listMode stays on — the
+  // toggle persists across project switches, only the rows re-fetch.
+  const loadMastery = useCallback(async (id: string) => {
+    setMasteryLoading(true);
+    setMasteryError(null);
+    try {
+      const res = await fetch(`/api/mastery?projectId=${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error("mastery failed");
+      const d: { rows: Row[] } = await res.json();
+      setMasteryRows(d.rows);
+    } catch {
+      setMasteryError("Could not load mastery");
+    } finally {
+      setMasteryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Fetch-on-toggle / on-projectId-change is the legitimate data-loading pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (listMode && projectId) void loadMastery(projectId);
+  }, [listMode, projectId, loadMastery]);
 
   const clusters: Cluster[] = useMemo(
     () => (data ? detectCommunities(data.concepts, data.edges) : []),
@@ -238,20 +274,21 @@ export default function GraphPage() {
   }
 
   const hasGraph = !!data && data.concepts.length > 0;
+  const title = listMode ? "Mastery" : "Concept graph";
 
   return (
     <div className="graph-paper h-full overflow-y-auto">
       <div className="mx-auto max-w-6xl px-4 py-6 tab:px-6 tab:py-10">
         <motion.div {...m} variants={fadeUp} className="mb-5 flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
           <Share2 size={16} className="text-feynman" />
-          Concept graph
+          {title}
         </motion.div>
 
         <motion.h1 {...m} variants={fadeUp} className="mb-6 font-serif text-[1.6rem] leading-tight text-ink">
-          Concept graph
+          {title}
         </motion.h1>
 
-        {hasGraph && pathMode && (
+        {hasGraph && pathMode && !listMode && (
           <motion.div {...m} variants={fadeUp} className="mb-4 flex flex-wrap items-center gap-3 rounded-[4px] border border-border bg-surface px-4 py-3">
             <div className="flex items-baseline gap-2">
               <span className="font-serif text-[1.4rem] leading-none text-ink">{coverage.percent}%</span>
@@ -288,7 +325,18 @@ export default function GraphPage() {
             </SelectContent>
           </Select>
 
-          {view.kind === "cluster" && (
+          {/* List/graph view toggle (the folded-in mastery list). Shown only
+              when the graph exists; graph-only controls below are hidden while
+              listMode is on so the list view stays uncluttered. */}
+          {hasGraph && (
+            <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-content-muted">
+              <Switch checked={listMode} onCheckedChange={setListMode} />
+              <List size={12} />
+              list
+            </label>
+          )}
+
+          {view.kind === "cluster" && !listMode && (
             <Button
               variant="secondary"
               size="sm"
@@ -302,20 +350,22 @@ export default function GraphPage() {
             </Button>
           )}
 
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="find a concept…"
-              className="w-[180px]"
-            />
-            <Button type="submit" variant="secondary" size="sm">
-              <Search size={14} />
-              find
-            </Button>
-          </form>
+          {!listMode && (
+            <form onSubmit={handleSearch} className="flex gap-2">
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="find a concept…"
+                className="w-[180px]"
+              />
+              <Button type="submit" variant="secondary" size="sm">
+                <Search size={14} />
+                find
+              </Button>
+            </form>
+          )}
 
-          {hasGraph && (
+          {hasGraph && !listMode && (
             <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-content-muted">
               <Switch checked={pathMode} onCheckedChange={setPathMode} />
               <Compass size={12} />
@@ -323,13 +373,13 @@ export default function GraphPage() {
             </label>
           )}
 
-          {data && hasGraph && (
+          {data && hasGraph && !listMode && (
             <Badge tone="neutral" className="ml-auto">
               {data.concepts.length} concepts · {data.edges.length} edges · {clusters.length} clusters
             </Badge>
           )}
 
-          {view.kind === "cluster" && (
+          {view.kind === "cluster" && !listMode && (
             <div className="flex w-full items-center gap-4 pt-1">
               <label className="mono flex cursor-pointer items-center gap-1.5 text-[12px] text-content-muted">
                 <Switch checked={showSemSim} onCheckedChange={setShowSemSim} />
@@ -370,6 +420,8 @@ export default function GraphPage() {
               build one on /projects
             </Link>
           </div>
+        ) : listMode ? (
+          <MasteryList rows={masteryRows} loading={masteryLoading} loadError={masteryError} />
         ) : view.kind === "overview" ? (
           <div className="grid gap-6 md:grid-cols-[1fr_300px]">
             <ClusterOverview

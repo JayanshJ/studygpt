@@ -1,9 +1,7 @@
 import {
   MessageSquare,
   Layers,
-  RotateCw,
-  Gem,
-  Share2,
+  Network,
   FolderKanban,
   Settings,
   type LucideIcon,
@@ -24,9 +22,11 @@ export interface NavItem {
 export const NAV: NavItem[] = [
   { href: "/", label: "Chat", icon: MessageSquare, match: "exact" },
   { href: "/decks", label: "Decks", icon: Layers, match: "prefix" },
-  { href: "/review", label: "Review", icon: RotateCw, match: "prefix" },
-  { href: "/mastery", label: "Mastery", icon: Gem, match: "prefix" },
-  { href: "/graph", label: "Graph", icon: Share2, match: "prefix" },
+  // "Map" is the concept graph route (/graph) — it also hosts the per-concept
+  // mastery list (toggle), so the old standalone /mastery + /review routes
+  // redirect here / into /decks. Route path stays "/graph" to avoid churning
+  // inbound links; only the label/icon changed.
+  { href: "/graph", label: "Map", icon: Network, match: "prefix" },
   { href: "/projects", label: "Projects", icon: FolderKanban, match: "prefix" },
   { href: "/settings", label: "Settings", icon: Settings, match: "prefix" },
 ];
