@@ -590,7 +590,7 @@ export default function Page() {
           slotEl,
         )}
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5 tab:px-5">
           <div className="flex min-w-0 items-center gap-3">
             {/* Mobile: conversation list slides in from the left (desktop pane
@@ -665,7 +665,7 @@ export default function Page() {
 
         <div
           ref={scrollRef}
-          className="graph-paper flex-1 overflow-y-auto px-4 py-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] tab:pb-8"
+          className="graph-paper min-h-0 flex-1 overflow-y-auto px-4 py-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] tab:pb-8"
         >
           {!conversation ? (
             <div className="flex min-h-full items-center justify-center">

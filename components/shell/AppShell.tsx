@@ -18,7 +18,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <SidebarSlotProvider>
         <TooltipProvider delayDuration={200} skipDelayDuration={300}>
           <Sidebar />
-          <div className="relative flex min-w-0 flex-1 flex-col">{children}</div>
+          {/* min-h-0: the content column is a stretched flex item of the
+              h-screen row; without it, min-height:auto lets a tall page (e.g.
+              the chat transcript) grow the column past 100vh so the page's own
+              overflow-y-auto never engages and the outer overflow-hidden clips
+              the spill — the page reads as "unscrollable". min-h-0 makes the
+              100vh stretch a hard bound so the page scrolls internally. */}
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
           <BottomTabBar />
           <Toaster />
         </TooltipProvider>
