@@ -270,6 +270,25 @@ html[data-theme="dark"] .prose-chat code { background: rgba(255, 255, 255, 0.08)
   padding: 0;
   font-size: 0.85rem;
 }
+
+/* Shiki syntax highlighting (rehype-pretty-code). In dual-theme mode Shiki sets
+   only `--shiki-light`/`--shiki-dark` custom properties on each token <span>
+   (no inline color) and keepBackground is false, so the <pre> chrome above
+   (bg-paper-3, border, padding) is the code block's look and only the token
+   colors are supplied here — light by default, dark under the theme override.
+   Spans without the vars (structural line wrappers) ignore the rule and
+   inherit the pre's text color. */
+.prose-chat pre span {
+  color: var(--shiki-light);
+}
+html[data-theme="dark"] .prose-chat pre span {
+  color: var(--shiki-dark) !important;
+}
+/* Colored tokens must survive the print path (⌘P → PDF). */
+.prose-chat pre {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
 .prose-chat blockquote {
   border-left: 2px solid var(--rule);
   padding: 0.1em 0 0.1em 0.95em;
