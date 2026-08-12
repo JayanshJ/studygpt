@@ -25,10 +25,11 @@ interface Props {
   loading?: boolean;
 }
 
-// The chat surface's second pane: project scope, search, new-conversation, and
-// the conversation list. Extracted from the old combined Sidebar (which also
-// held nav + theme — those now live in the global Rail). Used both as the
-// desktop pane and inside the mobile sheet.
+// The chat surface's conversation content: project scope, search,
+// new-conversation, and the conversation list. Renders as pure content (no
+// outer chrome / width / header) so it fills whatever container hosts it — the
+// global Sidebar's slot on desktop (portaled in by the chat page) or the mobile
+// slide-in sheet. Nav + theme live in the Sidebar, not here.
 export function ConversationListPane({
   conversations,
   activeId,
@@ -49,15 +50,8 @@ export function ConversationListPane({
   const filtered = q ? scoped.filter((c) => c.title.toLowerCase().includes(q)) : scoped;
 
   return (
-    <div className="flex h-full w-72 shrink-0 flex-col overflow-hidden border-r border-border bg-surface-2">
-      <div className="flex items-center justify-between px-5 py-3">
-        <span className="mono flex items-center gap-2 text-[13px] font-medium tracking-wide text-ink">
-          <span className="h-2 w-2 rounded-full bg-rule" aria-hidden />
-          StudyGPT
-        </span>
-      </div>
-
-      <div className="px-5 pb-2">
+    <div className="flex h-full w-full min-h-0 flex-col">
+      <div className="px-3 pb-2 pt-1">
         <ProjectSwitcher
           projects={projects}
           activeProjectId={activeProjectId}
@@ -65,18 +59,18 @@ export function ConversationListPane({
         />
       </div>
 
-      <div className="px-5 pb-2">
+      <div className="px-3 pb-2">
         <Button variant="primary" size="sm" className="w-full justify-center" onClick={onNew}>
           <Plus size={14} strokeWidth={2} />
           new conversation
         </Button>
       </div>
 
-      <div className="px-5 pb-3">
+      <div className="px-3 pb-3">
         <Input value={query} onChange={(e) => onQueryChange(e.target.value)} placeholder="search" />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
         <div className="flex w-full flex-col gap-1">
           {loading && scoped.length === 0 && (
             <>

@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw } from "lucide-react";
+import { MessageSquare, Plus, RefreshCw } from "lucide-react";
 import { ConversationListPane } from "@/components/shell/ConversationListPane";
+import { useSidebarSlot } from "@/components/shell/sidebar-slot";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { ModeToggle } from "@/components/ModeToggle";
@@ -70,22 +72,6 @@ export default function Page() {
   const [assistantStreamId, setAssistantStreamId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [convSheetOpen, setConvSheetOpen] = useState(false);
-  // Desktop conversation pane collapse. Persisted to localStorage so a reload
-  // honours the user's choice; defaults to expanded (SSR-safe — read in an
-  // effect to avoid a hydration mismatch). Mobile uses the slide-in sheet, not
-  // this collapse, so it only affects the tab+ pane.
-  const [paneCollapsed, setPaneCollapsed] = useState(false);
-  const togglePane = useCallback(() => {
-    setPaneCollapsed((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem("studygpt.pane.collapsed", next ? "1" : "0");
-      } catch {
-        /* ignore storage failures (private mode, etc.) */
-      }
-      return next;
-    });
-  }, []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectMaterialCount, setActiveProjectMaterialCount] = useState<number | null>(null);
@@ -108,6 +94,7 @@ export default function Page() {
   // turn's web-search preference instead of reverting to the default.
   const lastWebRef = useRef<boolean>(true);
   const m = useMotion();
+  const { slotEl } = useSidebarSlot();
 
   const loadConversations = useCallback(async () => {
     try {
@@ -217,16 +204,6 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadModels();
   }, [loadModels]);
-
-  // Restore the pane collapse preference on mount (SSR-safe).
-  useEffect(() => {
-    try {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPaneCollapsed(localStorage.getItem("studygpt.pane.collapsed") === "1");
-    } catch {
-      /* ignore */
-    }
-  }, []);
 
   // When a project conversation is active, fetch its material count for the
   // header chip. Reset to null for standalone conversations.
@@ -589,18 +566,14 @@ export default function Page() {
   })();
 
   return (
-    <div className="flex h-full min-w-0">
-      {/* Desktop conversation pane — collapsible (hidden below `tab`; mobile
-          uses the slide-in sheet). Collapsed renders a slim rail with an
-          expand button where the pane used to be. */}
-      <div className="hidden tab:flex">
-        {paneCollapsed ? (
-          <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-2 py-3">
-            <IconButton label="Show conversations" onClick={togglePane}>
-              <PanelLeftOpen size={17} strokeWidth={1.75} />
-            </IconButton>
-          </div>
-        ) : (
+    <>
+      {/* Desktop conversation list lives in the global Sidebar (AppShell) via a
+          portal — the chat page owns the conversation state, the Sidebar owns
+          the chrome, so there's a single left column instead of a rail + a
+          separate pane. Hidden below `tab` (the Sidebar is hidden there; mobile
+          uses the slide-in sheet below). Only portal once the slot has mounted. */}
+      {slotEl &&
+        createPortal(
           <ConversationListPane
             conversations={conversations}
             activeId={activeId}
@@ -613,9 +586,9 @@ export default function Page() {
             activeProjectId={activeProjectId}
             onProjectChange={setActiveProjectId}
             loading={convLoading}
-          />
+          />,
+          slotEl,
         )}
-      </div>
 
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5 tab:px-5">
@@ -644,15 +617,6 @@ export default function Page() {
                 />
               </DialogContent>
             </Dialog>
-            {/* Desktop: collapse the conversation pane (shown only while
-                expanded — the collapsed rail carries the expand button). */}
-            <IconButton
-              label="Hide conversations"
-              onClick={togglePane}
-              className={paneCollapsed ? "hidden" : "hidden tab:inline-flex"}
-            >
-              <PanelLeftClose size={17} strokeWidth={1.75} />
-            </IconButton>
             <span className="truncate text-[15px] italic text-ink-2">
               {conversation?.title ?? "Select or start a conversation"}
             </span>
@@ -819,6 +783,6 @@ export default function Page() {
           />
         </div>
       </main>
-    </div>
+    </>
   );
 }
