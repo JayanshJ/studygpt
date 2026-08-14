@@ -2,6 +2,7 @@
 
 import { useId, useState, useEffect } from "react";
 import mermaid from "mermaid";
+import { ArtifactFrame } from "@/components/artifacts/ArtifactFrame";
 
 // Renders a ```mermaid fence (entity-relationship, flow, sequence, …) to inline
 // SVG inside the chat / print page. Mermaid is the canonical format the model
@@ -9,10 +10,24 @@ import mermaid from "mermaid";
 // CodeBlock and renders as code. Inline SVG (not an iframe) so it also prints
 // crisply into the headless-Chromium PDF.
 
-// Initialize once at module load (idempotent). `securityLevel: 'loose'` allows
-// labeled nodes / click handlers; the source is the model in a local
-// single-user app, not untrusted multi-tenant input.
-mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: "default" });
+// Initialize once at module load. Strict mode keeps diagrams static: Mermaid
+// sanitizes generated SVG and does not bind model-provided click callbacks.
+export const MERMAID_CONFIG = {
+  startOnLoad: false,
+  securityLevel: "strict",
+  theme: "base",
+  fontFamily: "var(--font-sans)",
+  themeCSS: `
+    .node rect, .node circle, .node ellipse, .node polygon { fill: var(--surface) !important; stroke: var(--border-strong) !important; }
+    .cluster rect { fill: var(--surface-2) !important; stroke: var(--border) !important; }
+    .label, .label text, text { color: var(--content) !important; fill: var(--content) !important; }
+    .nodeLabel, .nodeLabel p, .nodeLabel span, foreignObject div { color: var(--content) !important; font-family: var(--font-sans) !important; }
+    .edgePath .path { stroke: var(--content-muted) !important; }
+    .arrowheadPath { fill: var(--content-muted) !important; }
+  `,
+} as const;
+
+mermaid.initialize(MERMAID_CONFIG);
 
 // Track in-flight renders so the print page can wait for diagrams to finish
 // before signalling data-print-ready (see app/print/[id]/page.tsx). Each
@@ -26,7 +41,14 @@ const decPending = () => {
   g.__pendingRenders = Math.max(0, (g.__pendingRenders ?? 0) - 1);
 };
 
-export function MermaidDiagram({ code }: { code: string }) {
+// Mermaid sometimes resolves `render()` with an SVG containing its parser
+// error screen rather than rejecting the promise. Never inject that SVG into
+// the chat as though it were a real diagram.
+export function isMermaidErrorSvg(svg: string): boolean {
+  return /syntax error in text/i.test(svg) && /mermaid version\s+\d/i.test(svg);
+}
+
+export function MermaidGraphic({ code }: { code: string }) {
   const reactId = useId();
   // useId() yields ":r0:"-style strings; strip non-alphanumerics for a valid
   // SVG element id (mermaid uses it internally).
@@ -42,7 +64,13 @@ export function MermaidDiagram({ code }: { code: string }) {
     mermaid
       .render(id, code)
       .then(({ svg }) => {
-        if (!cancelled) setSvg(svg);
+        if (cancelled) return;
+        if (isMermaidErrorSvg(svg)) {
+          setFailed(true);
+          setSvg(null);
+          return;
+        }
+        setSvg(svg);
       })
       .catch(() => {
         if (!cancelled) {
@@ -65,7 +93,7 @@ export function MermaidDiagram({ code }: { code: string }) {
 
   if (failed) {
     return (
-      <div className="my-3 rounded-card border border-border bg-surface-2 px-4 py-3 shadow-sm">
+      <div>
         <div className="mono mb-1.5 text-[11px] text-danger">invalid mermaid — showing source</div>
         <pre className="mono overflow-x-auto text-[12px] leading-5 text-content-muted">{code}</pre>
       </div>
@@ -73,7 +101,7 @@ export function MermaidDiagram({ code }: { code: string }) {
   }
   if (!svg) {
     return (
-      <div className="mono my-3 flex items-center gap-1.5 rounded-card border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint shadow-sm">
+      <div className="mono flex items-center gap-1.5 text-[12px] text-content-faint">
         <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-rule" />
         rendering diagram…
       </div>
@@ -81,8 +109,16 @@ export function MermaidDiagram({ code }: { code: string }) {
   }
   return (
     <div
-      className="my-3 overflow-x-auto rounded-card border border-border bg-surface-2 px-4 py-4 shadow-card [&>svg]:mx-auto [&>svg]:max-w-full"
+      className="overflow-x-auto [&>svg]:mx-auto [&>svg]:h-auto [&>svg]:max-w-full"
       dangerouslySetInnerHTML={{ __html: svg }}
     />
+  );
+}
+
+export function MermaidDiagram({ code }: { code: string }) {
+  return (
+    <ArtifactFrame kind="diagram">
+      <MermaidGraphic code={code} />
+    </ArtifactFrame>
   );
 }

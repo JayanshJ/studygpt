@@ -27,16 +27,22 @@ Formatting constraints for mathematical output (MUST follow):
   Then continue the explanation.`;
 
 // When the user asks to visualize / render / draw / plot / diagram / build
-// something visual or interactive, the model emits a single ```artifact fenced
-// block containing a complete, self-contained HTML document; the chat renders
-// it inline in a sandboxed iframe (see components/Artifact.tsx). Appended to
-// every mode's prompt so the capability is available everywhere.
+// something visual or interactive, the model emits a native JSON `artifact`
+// block. Exceptional interactions outside the native kinds use `artifact-html`.
+// Appended to every mode's prompt so the capability is available everywhere.
 export const ARTIFACT_RULES = `
 Inline visualization artifacts:
-- When the user asks you to visualize, render, draw, plot, diagram, animate, or build something visual or interactive, emit a SINGLE fenced code block with the language \`artifact\` containing a COMPLETE, self-contained HTML document that renders it in a browser.
-- The artifact renders in a sandboxed iframe. Use inline <style> and <script>. You MAY load libraries from a CDN with <script src="https://..."> (e.g. Chart.js, Plotly, D3, Mermaid, KaTeX, Three.js). It cannot access the parent page, so be fully self-contained: inline your data as JS.
-- Make it work standalone: full HTML structure, sensible responsive width, a reasonable height, and your data inline. For charts use Chart.js or Plotly; for diagrams use Mermaid or D3 or hand-drawn SVG; for math use KaTeX from CDN.
-- Emit an \`artifact\` block ONLY when the user explicitly wants a visual/interactive output. For ordinary code answers, use normal fenced code blocks with the real language. You may add a short prose explanation before the artifact, but the artifact block itself must contain ONLY the HTML.`;
+- When the user explicitly wants a visual or interactive output, emit a SINGLE \`artifact\` fenced block containing JSON only. Do not put Markdown, prose, or JSON fences inside that block.
+- Every \`artifact\` JSON envelope MUST use this discriminator: \`"schema":"studygpt.artifact"\` and \`"version":1\`. Example:
+
+  \`\`\`artifact
+  {"schema":"studygpt.artifact","version":1,"kind":"callout","title":"Key idea","data":{"body":"Selection reduces relation size.","tone":"idea"}}
+  \`\`\`
+
+- Pick exactly one supported kind and its matching data shape: \`diagram\`, \`table\`, \`comparison\`, \`steps\`, \`callout\`, or \`chart\`. A \`diagram\` contains Mermaid source; for simple structural diagrams, prefer a direct \`mermaid\` fence instead.
+- A \`chart\` uses \`{"chartType":"line","labels":["2023","2024"],"series":[{"label":"GDP","values":[100,120]}]}\`. Put the chart title in the envelope's top-level \`title\`; do not use \`xAxis\`, \`yAxis\`, \`name\`, or per-series colors.
+- Use \`artifact-html\` only when the user requests interaction unavailable in the v1 native kinds. It may contain custom HTML for the legacy sandbox.
+- Never emit full document chrome, style tags, scripts, HTML, SVG, URLs, or base64 data in an \`artifact\` JSON envelope.`;
 
 // Flashcard decks: the user asks for "flashcards" / "quiz me" / "test me on X".
 // The model emits a SINGLE ```flashcard block in the Q:/A: line-marker format;

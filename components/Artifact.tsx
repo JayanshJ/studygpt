@@ -95,7 +95,7 @@ export const Artifact = memo(function Artifact({ html }: { html: string }) {
     <div className="my-3 overflow-hidden rounded-card border border-border bg-surface-2 shadow-card">
       <div className="mono flex items-center gap-2 border-b border-border bg-surface px-3 py-1.5 text-[10px] tracking-wide text-content-faint">
         <span className="h-1 w-1 rounded-full bg-rule" />
-        visualization · html
+        custom visualization
         <div className="ml-auto flex items-center gap-1">
           <IconButton label={copied ? "Copied HTML" : "Copy HTML"} size="sm" onClick={copyHtml}>
             {copied ? <Check size={13} /> : <Copy size={13} />}

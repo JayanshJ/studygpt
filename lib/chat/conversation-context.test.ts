@@ -1,13 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildConversationContext } from "./conversation-context";
+import { documentSystemPrompt, systemPromptFor } from "@/lib/prompts";
 
-test("indexes document, Mermaid, and HTML artifacts from assistant messages", () => {
+test("indexes document, Mermaid, native, and legacy artifacts from assistant messages", () => {
   const context = buildConversationContext([
     { id: "doc", role: "assistant", kind: "document", content: "# Revision notes" },
     { id: "diagram", role: "assistant", kind: "chat", content: "```mermaid\nerDiagram\n```" },
     { id: "visual", role: "assistant", kind: "chat", content: "```artifact\n<html></html>\n```" },
     { id: "deck", role: "assistant", kind: "chat", content: "```flashcard\nQ: What is a key?\nA: An identifier.\n```" },
+    { id: "custom", role: "assistant", kind: "chat", content: "```artifact-html\n<div>Interactive</div>\n```" },
+    { id: "malformed", role: "assistant", kind: "chat", content: "```artifact\n{invalid\n```" },
+    {
+      id: "native-message",
+      role: "assistant",
+      kind: "chat",
+      content: `\`\`\`artifact
+{
+  "schema": "studygpt.artifact",
+  "version": 1,
+  "kind": "comparison",
+  "title": "Read/write conflicts",
+  "data": {
+    "items": [{ "label": "Read", "value": "Shared" }]
+  }
+}
+\`\`\``,
+    },
     { id: "question", role: "user", kind: "chat", content: "Make a diagram" },
   ]);
 
@@ -16,7 +35,25 @@ test("indexes document, Mermaid, and HTML artifacts from assistant messages", ()
     ["diagram", "diagram", "Diagram"],
     ["visualization", "visual", "Visualization"],
     ["flashcards", "deck", "Flashcards"],
+    ["visualization", "custom", "Visualization"],
+    ["visualization", "native-message", "Read/write conflicts"],
   ]);
+  assert.deepEqual(context.artifacts.at(-1), {
+    id: "native-message:visualization",
+    messageId: "native-message",
+    kind: "visualization",
+    label: "Read/write conflicts",
+  });
+});
+
+test("keeps native artifact instructions out of document prompts", () => {
+  const chatPrompt = systemPromptFor("chat");
+  const documentPrompt = documentSystemPrompt();
+
+  assert.match(chatPrompt, /studygpt\.artifact/);
+  assert.match(chatPrompt, /artifact-html/);
+  assert.doesNotMatch(documentPrompt, /studygpt\.artifact/);
+  assert.doesNotMatch(documentPrompt, /artifact-html/);
 });
 
 test("deduplicates sources while retaining their first citing message", () => {

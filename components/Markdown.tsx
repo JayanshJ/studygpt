@@ -9,8 +9,10 @@ import rehypePrettyCode from "rehype-pretty-code";
 import { CodeBlock } from "./CodeBlock";
 import { codeHighlightOptions } from "@/lib/markdown/highlight";
 import { Artifact } from "./Artifact";
+import { InvalidArtifact, NativeArtifact } from "./artifacts/NativeArtifact";
 import { FlashcardDeck } from "./FlashcardDeck";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { classifyArtifact } from "@/lib/artifacts/schema";
 import { extractText } from "@/lib/markdown/extract-text";
 import { normalizeMathDelimiters } from "@/lib/markdown/normalize-math";
 
@@ -21,7 +23,7 @@ import { normalizeMathDelimiters } from "@/lib/markdown/normalize-math";
 // widget on a half-streamed block would reload/re-parse it on every chunk.
 // `children` is the inner <code> element react-markdown places inside <pre>;
 // its className carries the language as `language-<lang>`.
-function PreBlock({
+export function PreBlock({
   children,
   "data-language": dataLanguage,
   className,
@@ -52,7 +54,7 @@ function PreBlock({
   // highlighter (defensive — rehype-pretty-code runs on every fence).
   const legacyClassName = codeEl?.props?.className ?? "";
   const lang = dataLanguage ?? /language-([\w-]+)/.exec(legacyClassName)?.[1];
-  if (lang === "artifact") {
+  if (lang === "artifact" || lang === "artifact-html") {
     if (streaming) {
       return (
         <div className="mono my-3 flex items-center gap-1.5 rounded-card border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint shadow-sm">
@@ -61,10 +63,30 @@ function PreBlock({
         </div>
       );
     }
+    if (lang === "artifact-html") {
+      return (
+        <div data-selection-excluded>
+          <Artifact html={extractText(children)} />
+        </div>
+      );
+    }
+    const classification = classifyArtifact(extractText(children));
+    if (classification.type === "native") {
+      return (
+        <div data-selection-excluded>
+          <NativeArtifact artifact={classification.artifact} />
+        </div>
+      );
+    }
+    if (classification.type === "legacy-html") {
+      return (
+        <div data-selection-excluded>
+          <Artifact html={classification.html} />
+        </div>
+      );
+    }
     return (
-      <div data-selection-excluded>
-        <Artifact html={extractText(children)} />
-      </div>
+      <InvalidArtifact source={classification.source} reason={classification.reason} />
     );
   }
   if (lang === "mermaid") {

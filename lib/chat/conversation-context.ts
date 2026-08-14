@@ -1,4 +1,5 @@
 import type { SourceEntry } from "@/lib/db/schema";
+import { artifactKindLabel, classifyArtifact } from "@/lib/artifacts/schema";
 
 export type ContextArtifactKind = "document" | "diagram" | "visualization" | "flashcards";
 
@@ -30,7 +31,7 @@ export type ConversationContext = {
 };
 
 const MERMAID_FENCE = /^```mermaid\b/m;
-const ARTIFACT_FENCE = /^```artifact\b/m;
+const ARTIFACT_FENCE = /^```(artifact|artifact-html)[^\S\r\n]*\r?\n([\s\S]*?)(?:\r?\n```|(?![\s\S]))/m;
 const FLASHCARD_FENCE = /^```flashcard\b/m;
 const HEADING = /^#{1,6}\s+(.+?)\s*#*\s*$/m;
 
@@ -58,13 +59,27 @@ function artifactForMessage(message: ContextMessage): ConversationArtifact[] {
       label: "Diagram",
     });
   }
-  if (ARTIFACT_FENCE.test(message.content)) {
-    artifacts.push({
-      id: `${message.id}:visualization`,
-      messageId: message.id,
-      kind: "visualization",
-      label: "Visualization",
-    });
+  const artifactFence = message.content.match(ARTIFACT_FENCE);
+  if (artifactFence) {
+    const [, language, source] = artifactFence;
+    const classification = language === "artifact-html"
+      ? { type: "legacy-html" as const }
+      : classifyArtifact(source);
+    if (classification.type === "native") {
+      artifacts.push({
+        id: `${message.id}:visualization`,
+        messageId: message.id,
+        kind: "visualization",
+        label: classification.artifact.title ?? artifactKindLabel(classification.artifact.kind),
+      });
+    } else if (classification.type === "legacy-html") {
+      artifacts.push({
+        id: `${message.id}:visualization`,
+        messageId: message.id,
+        kind: "visualization",
+        label: "Visualization",
+      });
+    }
   }
   if (FLASHCARD_FENCE.test(message.content)) {
     artifacts.push({
