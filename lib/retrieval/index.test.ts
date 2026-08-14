@@ -6,6 +6,7 @@ function chunk(materialId: string, ordinal: number, text: string, emb: number[])
   return {
     materialId,
     ordinal,
+    page: null,
     text,
     materialTitle: materialId,
     embedding: Buffer.from(new Float32Array(emb).buffer),

@@ -134,7 +134,7 @@ export function SourcesPanel({
         {open && (
           <motion.ul {...m} variants={fadeUp} className="mt-2 flex flex-col gap-2 overflow-hidden">
             {sources.map((s, i) => (
-              <li key={`${s.materialId}-${s.ordinal}-${i}`} className="rounded-[3px] bg-surface-2/60 px-2.5 py-2">
+              <li key={`${s.materialId}-${s.ordinal}-${i}`} className="rounded-card border border-border bg-surface-2/60 px-3 py-2.5 shadow-sm">
                 <p className="mono text-[10px] tracking-wide text-content-muted">{s.title}</p>
                 <p className="mt-1 text-[12px] leading-relaxed text-content-muted line-clamp-3">
                   “{s.snippet}”

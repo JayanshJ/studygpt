@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { MessageSquare, Plus, RefreshCw } from "lucide-react";
+import { MessageSquare, PanelRightClose, PanelRightOpen, Plus, RefreshCw, Search } from "lucide-react";
 import { ConversationListPane } from "@/components/shell/ConversationListPane";
 import { useSidebarSlot } from "@/components/shell/sidebar-slot";
 import { ChatMessage } from "@/components/ChatMessage";
@@ -13,27 +13,56 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/Dialog";
-import { useMotion, fadeUp } from "@/lib/motion";
+import { useLayoutMotion, useMotion, fadeUp } from "@/lib/motion";
+import { looksLikePdfExport } from "@/lib/chat/pdf-intent";
+import { consumeSse } from "@/lib/chat/sse";
+import { ChatOverlay } from "@/components/chat/ChatOverlay";
+import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
+import { SelectionAskController } from "@/components/chat/SelectionAskController";
+import { ConversationContextPanel } from "@/components/chat/ConversationContextPanel";
+import { ConversationSearch } from "@/components/chat/ConversationSearch";
+import { ArtifactFocusDialog } from "@/components/chat/ArtifactFocusDialog";
+import type { SelectionSnapshot } from "@/components/chat/selection";
+import { groupOverlayAnchors, type OverlayAnchor } from "@/lib/chat/overlay-threads";
+import { buildConversationContext, type ConversationArtifact, type ConversationSource } from "@/lib/chat/conversation-context";
+import type { ConversationSearchResult } from "@/lib/chat/conversation-search";
+import { normalizeLabel } from "@/lib/concepts/slug";
 import type {
   Attachment,
   Conversation,
   ConversationMode,
   Material,
   Message,
+  MessageActivity,
+  MessageGrounding,
+  OverlayMessage,
+  OverlayThread,
   Project,
   SourceEntry,
 } from "@/lib/db/schema";
 
 type MessageWithSources = Message & {
   sources?: SourceEntry[];
+  activities?: MessageActivity[];
+  grounding?: MessageGrounding | null;
   // Transient (in-memory only): not persisted to the DB. `upsertMessage`/
   // DB only stores `content`. Surfaced live while streaming and dropped on
   // reload.
   reasoning?: string;
   status?: string;
+  // Optional human-readable label the server sends with a status event, used
+  // INSTEAD of the static phase→label map so the server can show dynamic,
+  // data-driven steps ("found 3 relevant passages…"). Cleared on text-delta
+  // so the writing/thinking phases fall back to their static labels.
+  statusLabel?: string;
 };
 
 type ChatAction = "send" | "regenerate" | "edit";
+
+type OverlaySession = {
+  thread: OverlayThread;
+  messages: OverlayMessage[];
+};
 
 // Starter prompts for the empty states. The welcome hero and a brand-new
 // conversation both surface these as one-click chips; the in-conversation
@@ -72,6 +101,14 @@ export default function Page() {
   const [assistantStreamId, setAssistantStreamId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [convSheetOpen, setConvSheetOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextSheetOpen, setContextSheetOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ConversationSearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [focusedArtifact, setFocusedArtifact] = useState<{ content: string; kind: ConversationArtifact["kind"]; title: string } | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectMaterialCount, setActiveProjectMaterialCount] = useState<number | null>(null);
@@ -86,6 +123,9 @@ export default function Page() {
   // A prompt handed to the composer from the welcome screen's suggestion
   // chips (create-then-prefill). Cleared once the conversation exists.
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const [lastWeb, setLastWeb] = useState(true);
+  const [overlaySession, setOverlaySession] = useState<OverlaySession | null>(null);
+  const [overlayAnchors, setOverlayAnchors] = useState<Record<string, OverlayAnchor[]>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastRunRef = useRef<Parameters<typeof runChat>[0] | null>(null);
@@ -94,7 +134,21 @@ export default function Page() {
   // turn's web-search preference instead of reverting to the default.
   const lastWebRef = useRef<boolean>(true);
   const m = useMotion();
+  const layoutTransition = useLayoutMotion();
   const { slotEl } = useSidebarSlot();
+  const conversationContext = useMemo(() => buildConversationContext(messages), [messages]);
+  const contextItemCount = conversationContext.artifacts.length + conversationContext.sources.length;
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("studygpt.context-rail.open");
+    if (saved !== "true") return;
+    const restore = window.setTimeout(() => setContextOpen(true), 0);
+    return () => window.clearTimeout(restore);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("studygpt.context-rail.open", String(contextOpen));
+  }, [contextOpen]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -234,7 +288,106 @@ export default function Page() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, assistantStreamId]);
 
+  useEffect(() => {
+    const value = searchQuery.trim();
+    if (!searchOpen || value.length < 2) {
+      return;
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setSearchLoading(true);
+      fetch(`/api/search?q=${encodeURIComponent(value)}`, { signal: controller.signal })
+        .then((response) => response.ok ? response.json() : { results: [] })
+        .then((data: { results?: ConversationSearchResult[] }) => setSearchResults(data.results ?? []))
+        .catch(() => {})
+        .finally(() => setSearchLoading(false));
+    }, 140);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [searchOpen, searchQuery]);
+
+  function scrollToMessage(messageId: string) {
+    const target = document.getElementById(`message-${messageId}`);
+    if (!target) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    setHighlightedMessageId(messageId);
+    window.setTimeout(() => setHighlightedMessageId((current) => current === messageId ? null : current), 1200);
+    setContextSheetOpen(false);
+  }
+
+  function selectContextArtifact(artifact: ConversationArtifact) {
+    const message = messages.find((candidate) => candidate.id === artifact.messageId);
+    if (!message) {
+      scrollToMessage(artifact.messageId);
+      return;
+    }
+    setFocusedArtifact({ content: message.content, kind: artifact.kind, title: artifact.label });
+    setContextSheetOpen(false);
+  }
+
+  function selectContextSource(source: ConversationSource) {
+    scrollToMessage(source.messageId);
+  }
+
+  async function downloadContextDocument(artifact: ConversationArtifact) {
+    try {
+      const response = await fetch(`/api/messages/${artifact.messageId}/pdf`);
+      if (!response.ok) throw new Error(response.statusText || "render failed");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${normalizeLabel(artifact.label) || "document"}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      scrollToMessage(artifact.messageId);
+    }
+  }
+
+  async function loadOverlayAnchors(conversationId: string) {
+    const response = await fetch(`/api/chat/overlays?conversationId=${encodeURIComponent(conversationId)}`);
+    if (!response.ok) return;
+    const data = await response.json() as { threads?: OverlayThread[] };
+    const anchors = (data.threads ?? []).map((thread) => ({
+      id: thread.id,
+      sourceMessageId: thread.source_message_id,
+      selectedText: thread.selected_text,
+      textOffset: thread.text_offset,
+      updatedAt: thread.updated_at,
+    }));
+    setOverlayAnchors(groupOverlayAnchors(anchors));
+  }
+
+  async function resolveOverlay(snapshot: Pick<SelectionSnapshot, "sourceMessageId" | "selectedText" | "textOffset">) {
+    if (!conversation || streaming) return;
+    const response = await fetch("/api/chat/overlays", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversationId: conversation.id,
+        sourceMessageId: snapshot.sourceMessageId,
+        selectedText: snapshot.selectedText,
+        textOffset: snapshot.textOffset,
+      }),
+    });
+    if (!response.ok) {
+      setError((await response.json().catch(() => ({}))).error || "Could not open the discussion.");
+      return;
+    }
+    const data = await response.json() as OverlaySession;
+    setOverlaySession(data);
+    void loadOverlayAnchors(conversation.id);
+  }
+
   async function selectConversation(id: string) {
+    setOverlaySession(null);
+    setOverlayAnchors({});
     if (streaming) abortRef.current?.abort();
     setActiveId(id);
     syncUrl(id);
@@ -244,9 +397,20 @@ export default function Page() {
     const data = await res.json();
     setConversation(data.conversation);
     setMessages(data.messages ?? []);
+    void loadOverlayAnchors(id);
+  }
+
+  async function selectSearchResult(result: ConversationSearchResult) {
+    setSearchOpen(false);
+    await selectConversation(result.conversationId);
+    if (result.messageId) {
+      window.setTimeout(() => scrollToMessage(result.messageId!), 50);
+    }
   }
 
   async function newConversation() {
+    setOverlaySession(null);
+    setOverlayAnchors({});
     setError(null);
     const res = await fetch("/api/conversations", {
       method: "POST",
@@ -273,6 +437,8 @@ export default function Page() {
   }
 
   async function deleteConversation(id: string) {
+    setOverlaySession(null);
+    setOverlayAnchors({});
     await fetch(`/api/conversations/${id}`, { method: "DELETE" });
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (activeId === id) {
@@ -284,6 +450,7 @@ export default function Page() {
   }
 
   async function changeMode(mode: ConversationMode) {
+    setOverlaySession(null);
     if (!conversation) return;
     const res = await fetch(`/api/conversations/${conversation.id}`, {
       method: "PATCH",
@@ -296,6 +463,7 @@ export default function Page() {
   }
 
   async function changeModel(model: string) {
+    setOverlaySession(null);
     if (!conversation) return;
     const res = await fetch(`/api/conversations/${conversation.id}`, {
       method: "PATCH",
@@ -338,6 +506,7 @@ export default function Page() {
       role: "assistant",
       content: "",
       kind: args.document ? "document" : "chat",
+      delivery_state: "complete",
       attachments: null,
       tokens: null,
       created_at: Date.now(),
@@ -352,7 +521,7 @@ export default function Page() {
     let acc = "";
     // Patch the in-flight assistant message by id, merging the given fields
     // into the matching entry in setMessages. Used by the SSE handlers below.
-    const patch = (fields: Partial<Pick<MessageWithSources, "content" | "reasoning" | "status">>) =>
+    const patch = (fields: Partial<Pick<MessageWithSources, "content" | "reasoning" | "status" | "statusLabel" | "activities" | "grounding">>) =>
       setMessages((prev) =>
         prev.map((m) => (m.id === args.assistantId ? { ...m, ...fields } : m)),
       );
@@ -382,64 +551,67 @@ export default function Page() {
       }
       if (!res.body) throw new Error("No response stream");
 
-      // SSE stream: each event is a line `data: <single-line-json>\n\n`.
-      // Dispatch on evt.type: text/reasoning accumulate, status sets phase,
-      // error surfaces, done falls through to finish handling.
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
       let reasoningAcc = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const raw of lines) {
-          if (!raw.startsWith("data: ")) continue;
-          type SseEvent =
-            | { type: "text"; delta: string }
-            | { type: "reasoning"; delta: string }
-            | { type: "status"; phase: string; query?: string }
-            | { type: "error"; message: string }
-            | { type: "done" };
-          let evt: SseEvent;
-          try { evt = JSON.parse(raw.slice(6)); } catch { continue; }
-          if (evt.type === "text") {
-            acc += evt.delta;
-            patch({ content: acc, status: acc ? "writing" : "thinking" });
-          } else if (evt.type === "reasoning") {
-            reasoningAcc += evt.delta;
-            patch({ reasoning: reasoningAcc });
-          } else if (evt.type === "status") {
-            patch({ status: evt.phase });
-          } else if (evt.type === "error") {
-            setError(evt.message);
-          }
-          // "done" → fall through to finish handling
-        }
-      }
+      await consumeSse(
+        res,
+        {
+          onEvent: (event) => {
+            if (event.type === "text") {
+              acc += event.delta;
+              // Once the model starts emitting text, drop any dynamic pre-model
+              // label (e.g. "found 3 relevant passages…") so the writing/thinking
+              // phases render with their static labels instead of a stale one.
+              patch({ content: acc, status: acc ? "writing" : "thinking", statusLabel: undefined });
+            } else if (event.type === "reasoning") {
+              reasoningAcc += event.delta;
+              patch({ reasoning: reasoningAcc });
+            } else if (event.type === "status") {
+              // Prefer the server's dynamic `label` (data-driven) over the static
+              // phase→label map; fall back to the map when no label is sent.
+              patch({ status: event.phase, statusLabel: event.label });
+            } else if (event.type === "activity") {
+              setMessages((previous) =>
+                previous.map((message) =>
+                  message.id === args.assistantId
+                    ? { ...message, activities: [...(message.activities ?? []), event.activity] }
+                    : message,
+                ),
+              );
+            } else if (event.type === "grounding") {
+              patch({ grounding: event.grounding });
+            }
+          },
+        },
+        controller.signal,
+      );
     } catch (err) {
-      if (controller.signal.aborted) {
-        if (acc) {
-          // Stopped mid-stream — keep the partial and persist it (idempotent:
-          // if onFinish already wrote the full reply, this is a no-op). Pass
-          // the optimistic bubble's kind so a stopped document stays a document.
-          fetch("/api/messages", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              conversationId: conv.id,
-              messageId: args.assistantId,
-              role: "assistant",
-              content: acc,
-              kind: args.document ? "document" : "chat",
-            }),
-          }).catch(() => {});
-        } else {
-          // Stopped before any token — drop the empty bubble.
-          setMessages((prev) => prev.filter((m) => m.id !== args.assistantId));
+      if (acc) {
+        // Keep a partial reply regardless of whether the user stopped it or
+        // the provider ended unexpectedly. The PATCH is idempotent and the
+        // server's completed upsert wins if it already finished.
+        fetch("/api/messages", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversationId: conv.id,
+            messageId: args.assistantId,
+            role: "assistant",
+            content: acc,
+            kind: args.document ? "document" : "chat",
+            deliveryState: "interrupted",
+          }),
+        }).catch(() => {});
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === args.assistantId ? { ...message, delivery_state: "interrupted" } : message,
+          ),
+        );
+        if (!controller.signal.aborted) {
+          setError(err instanceof Error ? err.message : "Response interrupted");
         }
+      } else if (controller.signal.aborted) {
+        // Stopped before any token — drop the empty bubble.
+        setMessages((prev) => prev.filter((m) => m.id !== args.assistantId));
       } else {
         const msg = err instanceof Error ? err.message : "Something went wrong";
         setError(msg);
@@ -475,13 +647,22 @@ export default function Page() {
 
   async function sendMessage(text: string, attachments: Attachment[], document = false, web = true) {
     if (!conversation || streaming) return;
+    setOverlaySession(null);
+    // Auto-flip into document mode when the user asks for a PDF/export — so
+    // "make me a PDF with the notes" produces a document card with the
+    // download-PDF button instead of a plain chat reply (where the model
+    // would otherwise refuse and suggest external tools). An explicit
+    // toggle on already sets document=true; the detection is additive.
+    const documentMode = document || looksLikePdfExport(text);
     lastWebRef.current = web;
+    setLastWeb(web);
     const userMsg: MessageWithSources = {
       id: crypto.randomUUID(),
       conversation_id: conversation.id,
       role: "user",
       content: text,
       kind: "chat",
+      delivery_state: "complete",
       attachments: attachments.length ? attachments : null,
       tokens: null,
       created_at: Date.now(),
@@ -503,7 +684,7 @@ export default function Page() {
       baseDisplay: outgoing,
       assistantId: crypto.randomUUID(),
       userMessageId: userMsg.id,
-      document,
+      document: documentMode,
       web,
     });
   }
@@ -521,6 +702,7 @@ export default function Page() {
 
   async function regenerate() {
     if (!conversation || streaming) return;
+    setOverlaySession(null);
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
     if (!lastAssistant) return;
     const history = messages.filter((m) => m.id !== lastAssistant.id);
@@ -538,8 +720,42 @@ export default function Page() {
     });
   }
 
+  // Regenerate the assistant reply to a SPECIFIC user prompt — the "retry from
+  // here" affordance on each user message. Drops everything after that prompt
+  // (the old reply + any later turns) and re-streams a fresh reply, leaving
+  // the prompt itself unchanged. Implemented as an edit-with-identical-content
+  // so it reuses the server's edit branch (updateMessageContent is a no-op on
+  // unchanged content; deleteMessagesAfter drops the trailing messages; then it
+  // re-streams from the history we send). Document vs chat is preserved from
+  // the reply being replaced, so a document retry stays a document.
+  async function regenerateFromPrompt(messageId: string) {
+    if (!conversation || streaming) return;
+    setOverlaySession(null);
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx === -1 || messages[idx].role !== "user") return;
+    const prompt = messages[idx];
+    const followingAssistant = messages.slice(idx + 1).find((m) => m.role === "assistant");
+    const document = followingAssistant?.kind === "document";
+    const history = messages.slice(0, idx + 1); // keep through the prompt, drop the rest
+    await runChat({
+      action: "edit",
+      history,
+      baseDisplay: history,
+      assistantId: crypto.randomUUID(),
+      editMessageId: messageId,
+      editContent: prompt.content,
+      // undefined (rather than []) when there are no attachments, so the
+      // server skips updateMessageAttachments and leaves the prompt's
+      // attachments null instead of mutating null → [].
+      editAttachments: prompt.attachments ?? undefined,
+      document,
+      web: lastWebRef.current,
+    });
+  }
+
   async function editMessage(messageId: string, newContent: string, attachments: Attachment[]) {
     if (!conversation || streaming) return;
+    setOverlaySession(null);
     const idx = messages.findIndex((m) => m.id === messageId);
     if (idx === -1) return;
     const nextAttachments = attachments.length > 0 ? attachments : null;
@@ -591,7 +807,7 @@ export default function Page() {
         )}
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5 tab:px-5">
+        <header className="flex items-center justify-between gap-3 border-b border-border bg-paper/80 px-4 py-3 backdrop-blur-sm tab:px-5">
           <div className="flex min-w-0 items-center gap-3">
             {/* Mobile: conversation list slides in from the left (desktop pane
                 is always visible at tab+). */}
@@ -620,6 +836,9 @@ export default function Page() {
             <span className="truncate text-[15px] italic text-ink-2">
               {conversation?.title ?? "Select or start a conversation"}
             </span>
+            <IconButton label="Search conversations" onClick={() => setSearchOpen(true)}>
+              <Search size={16} strokeWidth={1.8} />
+            </IconButton>
           </div>
           {conversation && (
             <div className="flex shrink-0 items-center gap-3">
@@ -629,7 +848,7 @@ export default function Page() {
                 return (
                   <a
                     href="/projects"
-                    className="mono hidden items-center gap-1 rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[10px] tracking-wide text-feynman transition-colors hover:text-content sm:inline-flex"
+                    className="mono hidden items-center gap-1 rounded-full border border-border bg-surface px-2.5 py-1 text-[10px] tracking-wide text-feynman transition-colors hover:text-content sm:inline-flex"
                   >
                     {p.name}
                     {activeProjectMaterialCount !== null && (
@@ -640,33 +859,48 @@ export default function Page() {
                   </a>
                 );
               })()}
-              <select
-                value={conversation.model}
-                onChange={(e) => changeModel(e.target.value)}
-                aria-label="Model"
-                className="mono max-w-[180px] truncate rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[10px] tracking-wide text-content-faint outline-none transition-colors hover:border-border-strong focus:border-border-strong"
+              <Dialog open={contextSheetOpen} onOpenChange={setContextSheetOpen}>
+                <DialogTrigger asChild>
+                  <IconButton label="Open conversation context" className="tab:hidden">
+                    <PanelRightOpen size={17} strokeWidth={1.75} />
+                  </IconButton>
+                </DialogTrigger>
+                <DialogContent side="right" className="flex p-0">
+                  <ConversationContextPanel
+                    variant="sheet"
+                    context={conversationContext}
+                    onSelectArtifact={selectContextArtifact}
+                    onSelectSource={selectContextSource}
+                    onDownloadDocument={downloadContextDocument}
+                  />
+                </DialogContent>
+              </Dialog>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setContextOpen((open) => !open)}
+                aria-expanded={contextOpen}
+                aria-controls="conversation-context-rail"
+                className="hidden gap-1.5 tab:inline-flex"
               >
-                {/* Ensure the current model is always selectable even if the
-                    backend list is empty / doesn't include it. */}
-                {!models.some((mdl) => mdl.id === conversation.model) && (
-                  <option value={conversation.model}>{conversation.model}</option>
+                {contextOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+                context
+                {contextItemCount > 0 && (
+                  <span className="mono text-[10px] text-content-faint">{contextItemCount}</span>
                 )}
-                {models.map((mdl) => (
-                  <option key={mdl.id} value={mdl.id}>
-                    {mdl.id}
-                    {mdl.vision ? "  ◉ vision" : ""}
-                  </option>
-                ))}
-              </select>
+              </Button>
+              <ModelSwitcher value={conversation.model} models={models} onChange={changeModel} />
               <ModeToggle mode={conversation.mode} onChange={changeMode} />
             </div>
           )}
         </header>
 
-        <div
-          ref={scrollRef}
-          className="graph-paper min-h-0 flex-1 overflow-y-auto px-4 py-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] tab:pb-8"
-        >
+        <div className="flex min-h-0 min-w-0 flex-1">
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div
+              ref={scrollRef}
+              className="chat-scroll graph-paper min-h-0 flex-1 overflow-y-auto px-4 py-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] tab:px-6 tab:pb-8"
+            >
           {!conversation ? (
             <div className="flex min-h-full items-center justify-center">
               <motion.div {...m} variants={fadeUp} className="w-full max-w-[560px]">
@@ -694,7 +928,7 @@ export default function Page() {
                         key={s}
                         type="button"
                         onClick={() => welcomeChip(s)}
-                        className="mono rounded-[3px] border border-border bg-surface px-2.5 py-1 text-[12px] text-content-muted transition-[border-color,background-color] duration-fast ease-out hover:border-border-strong hover:bg-surface-2 hover:text-content"
+                        className="mono rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] text-content-muted transition-[transform,border-color,background-color] duration-fast ease-out hover:-translate-y-px hover:border-border-strong hover:bg-surface-2 hover:text-content"
                       >
                         {s}
                       </button>
@@ -704,7 +938,7 @@ export default function Page() {
               </motion.div>
             </div>
           ) : (
-            <div className="mx-auto flex w-full max-w-[680px] flex-col">
+            <div className="chat-content flex w-full flex-col">
               {messages.length === 0 && !streaming && (
                 <motion.div {...m} variants={fadeUp} className="mx-auto mt-20 w-full max-w-[520px] text-center">
                   <p className="eyebrow">Ask</p>
@@ -718,7 +952,7 @@ export default function Page() {
                           key={s}
                           type="button"
                           onClick={() => sendMessage(s, [])}
-                          className="mono rounded-[3px] border border-border bg-surface px-2.5 py-1 text-[12px] text-content-muted transition-[border-color,background-color] duration-fast ease-out hover:border-border-strong hover:bg-surface-2 hover:text-content"
+                          className="mono rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] text-content-muted transition-[transform,border-color,background-color] duration-fast ease-out hover:-translate-y-px hover:border-border-strong hover:bg-surface-2 hover:text-content"
                         >
                           {s}
                         </button>
@@ -728,60 +962,120 @@ export default function Page() {
                 </motion.div>
               )}
               {messages.map((m, i) => (
-                <div key={m.id} className={i === 0 ? "pt-2" : "mt-6 border-t border-border pt-6"}>
+                <motion.div
+                  key={m.id}
+                  id={`message-${m.id}`}
+                  layout={!streaming}
+                  transition={layoutTransition}
+                  className={`${i === 0 ? "pt-2" : "mt-6 border-t border-border pt-6"}${highlightedMessageId === m.id ? " rounded-card bg-rule/5 ring-1 ring-rule/30 transition-[background-color,box-shadow] duration-fast" : ""}`}
+                >
                   <ChatMessage
                     id={m.id}
                     role={m.role}
                     content={m.content}
                     attachments={m.attachments}
                     kind={m.kind}
+                    deliveryState={m.delivery_state}
                     streaming={streaming && m.id === assistantStreamId}
                     sources={m.sources}
+                    activities={m.activities}
+                    grounding={m.grounding}
                     status={m.status}
+                    statusLabel={m.statusLabel}
                     reasoning={m.reasoning}
                     allMaterials={activeProjectMaterials}
-                    canRegenerate={m.id === lastAssistantId}
-                    onRegenerate={regenerate}
+                    canRegenerate={m.role === "user" ? true : m.id === lastAssistantId}
+                    onRegenerate={m.role === "user" ? () => regenerateFromPrompt(m.id) : regenerate}
                     onEdit={(content, attachments) => editMessage(m.id, content, attachments)}
                     conversationTitle={conversation?.title}
                     conversationId={conversation?.id}
+                    overlayAnchors={m.role === "assistant" ? overlayAnchors[m.id] ?? [] : []}
+                    onOpenOverlay={resolveOverlay}
                   />
-                </div>
+                </motion.div>
               ))}
+              {conversation && !streaming && (
+                <SelectionAskController onAsk={resolveOverlay} />
+              )}
             </div>
           )}
-        </div>
-
-        {error && (
-          <div className="mx-auto w-full max-w-[680px] px-4">
-            <div className="mono flex items-center gap-3 rounded-[3px] border border-danger/40 bg-danger/5 px-3 py-2 text-[12px] text-danger">
-              <span className="flex-1">{error}</span>
-              <Button variant="ghost" size="sm" onClick={retry} className="text-danger hover:text-danger">
-                <RefreshCw size={13} />
-                retry
-              </Button>
             </div>
-          </div>
-        )}
 
-        <div className="pb-[calc(0.5rem+env(safe-area-inset-bottom))] tab:pb-0">
-          <ChatInput
-            onSend={sendMessage}
-            onStop={stop}
-            streaming={streaming}
-            disabled={streaming || !conversation}
-            projectId={conversation?.project_id ?? null}
-            transcriptionAvailable={transcriptionAvailable}
-            initialText={pendingPrompt ?? undefined}
-            placeholder={
-              conversation
-                ? conversation.mode === "feynman"
-                  ? "Tell the tutor what concept you want to learn…"
-                  : "Ask about a concept… (Enter to send)"
-                : "Start a conversation first"
-            }
-          />
+            {error && (
+              <div className="chat-content px-4">
+                <div className="mono flex items-center gap-3 rounded-card border border-danger/40 bg-danger/5 px-3.5 py-3 text-[12px] text-danger shadow-sm">
+                  <span className="flex-1">{error}</span>
+                  <Button variant="ghost" size="sm" onClick={retry} className="text-danger hover:text-danger">
+                    <RefreshCw size={13} />
+                    retry
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="pb-[calc(0.5rem+env(safe-area-inset-bottom))] tab:pb-0">
+              <ChatInput
+                onSend={sendMessage}
+                onStop={stop}
+                streaming={streaming}
+                disabled={streaming || !conversation}
+                projectId={conversation?.project_id ?? null}
+                transcriptionAvailable={transcriptionAvailable}
+                initialText={pendingPrompt ?? undefined}
+                placeholder={
+                  conversation
+                    ? conversation.mode === "feynman"
+                      ? "Tell the tutor what concept you want to learn…"
+                      : "Ask about a concept… (Enter to send)"
+                    : "Start a conversation first"
+                }
+              />
+            </div>
+          </section>
+          {contextOpen && (
+            <aside
+              id="conversation-context-rail"
+              aria-label="Conversation context"
+              className="hidden w-72 shrink-0 border-l border-border/60 bg-paper/70 tab:flex"
+            >
+              <ConversationContextPanel
+                variant="rail"
+                context={conversationContext}
+                onSelectArtifact={selectContextArtifact}
+                onSelectSource={selectContextSource}
+                onDownloadDocument={downloadContextDocument}
+              />
+            </aside>
+          )}
         </div>
+        {overlaySession && conversation && (
+          <ChatOverlay
+            thread={overlaySession.thread}
+            initialMessages={overlaySession.messages}
+            web={lastWeb}
+            allMaterials={activeProjectMaterials}
+            transcriptionAvailable={transcriptionAvailable}
+            onClose={() => setOverlaySession(null)}
+          />
+        )}
+        {focusedArtifact && (
+          <ArtifactFocusDialog
+            open
+            onOpenChange={(open) => !open && setFocusedArtifact(null)}
+            content={focusedArtifact.content}
+            kind={focusedArtifact.kind}
+            title={focusedArtifact.title}
+          />
+        )}
+        <ConversationSearch
+          open={searchOpen}
+          onOpenChange={setSearchOpen}
+          onSelect={selectSearchResult}
+          results={searchResults}
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          loading={searchLoading}
+        />
       </main>
     </>
   );

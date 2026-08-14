@@ -19,5 +19,12 @@ export async function PATCH(req: Request) {
   if (typeof body.openaiApiKey === "string") setSetting("openaiApiKey", body.openaiApiKey);
   if (typeof body.theme === "string") setSetting("theme", body.theme);
   if (typeof body.embeddingModel === "string") setSetting("embeddingModel", body.embeddingModel);
+  // Vision pipeline (diagram notation): a separate OpenAI-compatible backend
+  // (OpenRouter by default) + its own model + base URL + API key. Empty
+  // visionModel/visionApiKey disables the vision path; diagram turns then fall
+  // back to the text-only Mermaid path.
+  if (typeof body.visionModel === "string") setSetting("visionModel", body.visionModel);
+  if (typeof body.visionBaseUrl === "string") setSetting("visionBaseUrl", body.visionBaseUrl);
+  if (typeof body.visionApiKey === "string") setSetting("visionApiKey", body.visionApiKey);
   return NextResponse.json({ ...getModelConfig(), totalTokens: getTotalTokens(), raw: getAllSettings() });
 }

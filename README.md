@@ -2,6 +2,15 @@
 
 A local study companion for **concept-heavy learning** (math, physics, CS theory). A ChatGPT-style streaming chat that runs fully on your machine via [Ollama](https://ollama.com) — no API key, no per-token cost. v1 is the MVP: streaming chat + conversation history + a per-conversation **Feynman mode** (you explain concepts back; the AI critiques the gaps).
 
+## Product North Star
+
+StudyGPT should always become easier to use and more intelligently aware of
+the learner's situation. New work should remove friction, make the interface
+clearer, and use available context—conversation, selected text, project
+materials, notation memory, and intent—to help without making people repeat
+themselves. Avoid complexity that does not improve either usability or useful
+intelligence.
+
 ## Prerequisites
 
 1. Install Ollama and start it: `ollama serve`

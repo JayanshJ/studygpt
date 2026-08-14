@@ -17,6 +17,9 @@ interface Config {
   apiKey: string;
   tavilyApiKey: string;
   openaiApiKey: string;
+  visionModel: string;
+  visionBaseURL: string;
+  visionApiKey: string;
   totalTokens: number;
 }
 
@@ -27,9 +30,13 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState("");
   const [tavilyApiKey, setTavilyApiKey] = useState("");
   const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [visionModel, setVisionModel] = useState("");
+  const [visionBaseUrl, setVisionBaseUrl] = useState("");
+  const [visionApiKey, setVisionApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [showTavilyKey, setShowTavilyKey] = useState(false);
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [showVisionKey, setShowVisionKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const m = useMotion();
 
@@ -43,6 +50,9 @@ export default function SettingsPage() {
         setApiKey(c.apiKey || "");
         setTavilyApiKey(c.tavilyApiKey || "");
         setOpenaiApiKey(c.openaiApiKey || "");
+        setVisionModel(c.visionModel || "");
+        setVisionBaseUrl(c.visionBaseURL || "");
+        setVisionApiKey(c.visionApiKey || "");
       })
       .catch(() => setError("Could not load settings."));
   }, []);
@@ -53,7 +63,17 @@ export default function SettingsPage() {
     const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "ollama", model, baseUrl, apiKey, tavilyApiKey, openaiApiKey }),
+      body: JSON.stringify({
+        provider: "ollama",
+        model,
+        baseUrl,
+        apiKey,
+        tavilyApiKey,
+        openaiApiKey,
+        visionModel,
+        visionBaseUrl,
+        visionApiKey,
+      }),
     });
     if (res.ok) {
       setConfig(await res.json());
@@ -179,6 +199,49 @@ export default function SettingsPage() {
               show={showOpenaiKey}
               onToggle={() => setShowOpenaiKey((s) => !s)}
               placeholder="(none — voice uses the browser engine)"
+            />
+          </Field>
+
+          <div className="mono mt-2 text-[11px] tracking-[0.18em] text-rule">VISION (DIAGRAMS)</div>
+          <p className="mono -mt-4 text-[11px] text-content-faint">
+            When you ask for a diagram (e.g. an ER model), the app feeds the
+            relevant slide page images to this vision model so it can reproduce
+            your course&apos;s notation. Runs on a separate OpenAI-compatible
+            backend (OpenRouter by default). Leave the key blank to fall back to
+            a text-only diagram.
+          </p>
+
+          <Field
+            label="Vision model"
+            hint={`Any OpenAI-compatible vision model — e.g. ${config.visionModel || "google/gemini-2.5-flash"}.`}
+          >
+            <Input
+              value={visionModel}
+              onChange={(e) => setVisionModel(e.target.value)}
+              placeholder="google/gemini-2.5-flash"
+              className="font-sans"
+            />
+          </Field>
+
+          <Field label="Vision base URL" hint="OpenAI-compatible endpoint for the vision model.">
+            <Input
+              value={visionBaseUrl}
+              onChange={(e) => setVisionBaseUrl(e.target.value)}
+              placeholder="https://openrouter.ai/api/v1"
+              className="font-sans"
+            />
+          </Field>
+
+          <Field
+            label="Vision API key"
+            hint="Sent as a Bearer token to the vision backend. Leave blank to disable the vision path."
+          >
+            <KeyInput
+              value={visionApiKey}
+              onChange={setVisionApiKey}
+              show={showVisionKey}
+              onToggle={() => setShowVisionKey((s) => !s)}
+              placeholder="(none — vision disabled)"
             />
           </Field>
 

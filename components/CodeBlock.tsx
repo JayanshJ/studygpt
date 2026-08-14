@@ -18,7 +18,7 @@ interface PreProps {
 
 // Languages that don't merit a label: plaintext/unfenced (no tokens to brand),
 // and the two special fences routed elsewhere (Artifact / FlashcardDeck).
-const NO_LABEL_LANGS = new Set(["text", "plaintext", "artifact", "flashcard"]);
+const NO_LABEL_LANGS = new Set(["text", "plaintext", "artifact", "flashcard", "mermaid"]);
 
 export function CodeBlock({ children, className, style, lang }: PreProps) {
   const [copied, setCopied] = useState(false);
@@ -46,7 +46,7 @@ export function CodeBlock({ children, className, style, lang }: PreProps) {
       <button
         onClick={copy}
         aria-label="Copy code"
-        className="no-print absolute right-2 top-2 z-10 inline-flex h-6 w-6 items-center justify-center rounded-[3px] text-content-faint opacity-0 transition-opacity hover:bg-surface-2 hover:text-content group-hover/code:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring outline-none"
+        className="no-print absolute right-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-control text-content-faint opacity-0 transition-opacity hover:bg-surface-2 hover:text-content group-hover/code:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring outline-none"
       >
         {copied ? <Check size={13} /> : <Copy size={13} />}
       </button>

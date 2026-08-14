@@ -61,3 +61,10 @@ export function useMotion() {
     ? { initial: false, animate: "visible" as const, exit: undefined }
     : { initial: "hidden" as const, animate: "visible" as const, exit: "exit" as const };
 }
+
+/** Transition for shared-layout movement (active markers and reordered rows).
+ * It respects the same reduced-motion preference as entrance animations. */
+export function useLayoutMotion(): Transition {
+  const reduce = useReducedMotion();
+  return reduce ? { duration: 0 } : fastTransition;
+}

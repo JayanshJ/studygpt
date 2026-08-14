@@ -4,5 +4,5 @@
 // shimmer; the global `@media (prefers-reduced-motion)` rule zeroes its
 // duration, so skeletons sit still when the user opts out of motion.
 export function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded-[2px] bg-ink/10 ${className}`} />;
+  return <div className={`animate-pulse rounded-control bg-ink/10 ${className}`} />;
 }

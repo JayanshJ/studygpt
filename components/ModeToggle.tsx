@@ -1,7 +1,9 @@
 "use client";
 
+import { motion } from "motion/react";
 import type { ConversationMode } from "@/lib/db/schema";
 import { cn } from "@/lib/cn";
+import { useLayoutMotion } from "@/lib/motion";
 
 interface Props {
   mode: ConversationMode;
@@ -11,28 +13,48 @@ interface Props {
 // Segmented control. Color encodes the mode: ink for Chat, chalk-blue for
 // Feynman — so the active state tells you which kind of session you're in.
 export function ModeToggle({ mode, onChange }: Props) {
+  const layoutTransition = useLayoutMotion();
+
   return (
-    <div className="mono inline-flex rounded-[4px] border border-border bg-surface-2 p-0.5 text-[11px] tracking-wide">
+    <div className="mono inline-flex rounded-card border border-border bg-surface-2 p-1 text-[11px] tracking-wide shadow-sm">
       <button
+        type="button"
         onClick={() => onChange("chat")}
         aria-pressed={mode === "chat"}
         className={cn(
-          "rounded-[3px] px-2.5 py-1 transition-colors duration-fast ease-out",
-          mode === "chat" ? "bg-ink text-paper-2" : "text-content-faint hover:text-content",
+          "relative isolate rounded-control px-3 py-1.5 transition-colors duration-fast ease-out",
+          mode === "chat" ? "text-paper-2" : "text-content-faint hover:text-content",
         )}
       >
-        Chat
+        {mode === "chat" && (
+          <motion.span
+            aria-hidden
+            layoutId="active-mode-indicator"
+            transition={layoutTransition}
+            className="absolute inset-0 z-0 rounded-control bg-ink shadow-sm"
+          />
+        )}
+        <span className="relative z-10">Chat</span>
       </button>
       <button
+        type="button"
         onClick={() => onChange("feynman")}
         aria-pressed={mode === "feynman"}
         title="You explain concepts back; the tutor critiques the gaps."
         className={cn(
-          "rounded-[3px] px-2.5 py-1 transition-colors duration-fast ease-out",
-          mode === "feynman" ? "bg-feynman text-paper-2" : "text-content-faint hover:text-content",
+          "relative isolate rounded-control px-3 py-1.5 transition-colors duration-fast ease-out",
+          mode === "feynman" ? "text-paper-2" : "text-content-faint hover:text-content",
         )}
       >
-        Feynman
+        {mode === "feynman" && (
+          <motion.span
+            aria-hidden
+            layoutId="active-mode-indicator"
+            transition={layoutTransition}
+            className="absolute inset-0 z-0 rounded-control bg-feynman shadow-sm"
+          />
+        )}
+        <span className="relative z-10">Feynman</span>
       </button>
     </div>
   );

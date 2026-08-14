@@ -192,7 +192,7 @@ export default function DecksPage() {
                       />
                     ) : (
                       <div
-                        className={`flex items-center gap-1.5 rounded-[3px] px-2 py-1.5 transition-colors ${
+                        className={`flex items-center gap-1.5 rounded-control px-2.5 py-2 transition-colors ${
                           active ? "bg-surface-2" : "hover:bg-surface-2/60"
                         }`}
                       >
@@ -289,7 +289,7 @@ export default function DecksPage() {
                   {cards.map((c, i) => (
                     <li
                       key={c.id}
-                      className="rounded-[3px] border border-border bg-surface-2 px-3 py-2.5"
+                      className="rounded-card border border-border bg-surface-2 px-3 py-2.5 shadow-sm"
                     >
                       <div className="mono mb-1 text-[10px] tracking-wide text-content-faint">
                         {i + 1} · Q

@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
+import { motion } from "motion/react";
 import type { Conversation, Project } from "@/lib/db/schema";
 import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
+import { useLayoutMotion } from "@/lib/motion";
 
 interface Props {
   conversations: Conversation[];
@@ -43,6 +45,7 @@ export function ConversationListPane({
   onProjectChange,
   loading = false,
 }: Props) {
+  const layoutTransition = useLayoutMotion();
   const scoped = activeProjectId
     ? conversations.filter((c) => c.project_id === activeProjectId)
     : conversations.filter((c) => !c.project_id);
@@ -75,7 +78,7 @@ export function ConversationListPane({
           {loading && scoped.length === 0 && (
             <>
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-2 rounded-[4px] px-3 py-2.5">
+                <div key={i} className="flex items-center gap-2 rounded-control px-3 py-2.5">
                   <Skeleton className="h-3.5 flex-1" />
                   <Skeleton className="h-3 w-4" />
                 </div>
@@ -94,16 +97,18 @@ export function ConversationListPane({
           {filtered.map((c) => {
             const active = c.id === activeId;
             return (
-              <div
+              <motion.div
                 key={c.id}
+                layout="position"
+                transition={layoutTransition}
                 onClick={() => onSelect(c.id)}
                 className={cn(
-                  "group relative flex h-9 w-full cursor-pointer items-center overflow-hidden rounded-[4px] px-3 text-[13px] transition-colors duration-fast ease-out",
+                  "group relative flex h-10 w-full cursor-pointer items-center overflow-hidden rounded-control px-3 text-[13px] transition-[transform,background-color,color] duration-fast ease-out hover:-translate-y-px",
                   active ? "bg-surface shadow-card" : "hover:bg-surface/70",
                 )}
               >
                 {active && (
-                  <span className="absolute left-1 top-2 bottom-2 w-[3px] rounded-[2px] bg-rule" />
+                  <span className="absolute left-1 top-2 bottom-2 w-[3px] rounded-full bg-rule" />
                 )}
                 <span className="min-w-0 flex-1 truncate leading-snug text-ink">{c.title}</span>
                 {c.mode === "feynman" && (
@@ -117,11 +122,11 @@ export function ConversationListPane({
                     onDelete(c.id);
                   }}
                   aria-label="Delete conversation"
-                  className="shrink-0 rounded-[3px] p-0.5 text-content-faint transition-colors duration-fast ease-out hover:bg-rule/10 hover:text-rule focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
+                  className="shrink-0 rounded-control p-1 text-content-faint transition-colors duration-fast ease-out hover:bg-rule/10 hover:text-rule focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
                 >
                   <X size={13} />
                 </button>
-              </div>
+              </motion.div>
             );
           })}
         </div>

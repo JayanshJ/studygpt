@@ -14,7 +14,7 @@ import { SidebarSlotProvider } from "./sidebar-slot";
 // instead of a nav rail + a separate conversation pane.
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-paper text-ink">
+    <div className="flex h-[100dvh] w-full gap-0 overflow-hidden bg-paper-2 p-0 text-ink tab:p-3">
       <SidebarSlotProvider>
         <TooltipProvider delayDuration={200} skipDelayDuration={300}>
           <Sidebar />
@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               overflow-y-auto never engages and the outer overflow-hidden clips
               the spill — the page reads as "unscrollable". min-h-0 makes the
               100vh stretch a hard bound so the page scrolls internally. */}
-          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper tab:ml-3 tab:rounded-panel tab:shadow-card">{children}</div>
           <BottomTabBar />
           <Toaster />
         </TooltipProvider>

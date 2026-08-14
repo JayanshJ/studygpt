@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderKanban, Plus, Pencil, Trash2, FileUp, Link as LinkIcon, Workflow, Loader2 } from "lucide-react";
-import type { Material, Project } from "@/lib/db/schema";
+import type { Material, Project, ProjectMemoryEntry } from "@/lib/db/schema";
+import { ProjectMemory } from "@/components/projects/ProjectMemory";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -41,6 +42,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [memoryEntries, setMemoryEntries] = useState<ProjectMemoryEntry[]>([]);
   const [newProjectName, setNewProjectName] = useState("");
   const [addUrl, setAddUrl] = useState("");
   const [addTitle, setAddTitle] = useState("");
@@ -70,6 +72,10 @@ export default function ProjectsPage() {
     const res = await fetch(`/api/concepts?projectId=${encodeURIComponent(id)}`);
     if (res.ok) setConceptsReport(await res.json());
   }, []);
+  const loadMemory = useCallback(async (id: string) => {
+    const res = await fetch(`/api/projects/${id}/memory`);
+    if (res.ok) setMemoryEntries((await res.json() as { entries: ProjectMemoryEntry[] }).entries);
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -86,6 +92,7 @@ export default function ProjectsPage() {
       // Selected project got deleted — fall back to first or none.
       setSelectedId(projects[0]?.id ?? null);
       setMaterials([]);
+      setMemoryEntries([]);
     }
   }, [projects, selectedId]);
 
@@ -99,7 +106,12 @@ export default function ProjectsPage() {
     }
     loadMaterials(selectedId);
     loadConcepts(selectedId);
-  }, [selectedId, loadMaterials, loadConcepts]);
+    loadMemory(selectedId);
+  }, [selectedId, loadMaterials, loadConcepts, loadMemory]);
+
+  async function addMemory(content: string) { if (!selectedId) return; await fetch(`/api/projects/${selectedId}/memory`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) }); await loadMemory(selectedId); }
+  async function toggleMemory(entry: ProjectMemoryEntry, active: boolean) { if (!selectedId) return; await fetch(`/api/projects/${selectedId}/memory`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: entry.id, active }) }); await loadMemory(selectedId); }
+  async function removeMemory(entry: ProjectMemoryEntry) { if (!selectedId) return; await fetch(`/api/projects/${selectedId}/memory?entryId=${encodeURIComponent(entry.id)}`, { method: "DELETE" }); await loadMemory(selectedId); }
 
   // Poll while any material is still processing.
   useEffect(() => {
@@ -369,7 +381,7 @@ export default function ProjectsPage() {
                       />
                     ) : (
                       <div
-                        className={`flex items-center gap-1.5 rounded-[3px] px-2 py-1.5 transition-colors ${
+                        className={`flex items-center gap-1.5 rounded-control px-2.5 py-2 transition-colors ${
                           active ? "bg-surface-2" : "hover:bg-surface-2/60"
                         }`}
                       >
@@ -420,6 +432,7 @@ export default function ProjectsPage() {
                     {materials.length} material{materials.length === 1 ? "" : "s"}
                   </span>
                 </div>
+                <ProjectMemory entries={memoryEntries} onAdd={addMemory} onToggle={toggleMemory} onDelete={removeMemory} />
 
                 {/* Build concept graph (SP1). Disabled while building or when
                     no material is ready to extract from. The chip shows the
@@ -521,7 +534,7 @@ export default function ProjectsPage() {
                   {materials.map((mat) => (
                     <li
                       key={mat.id}
-                      className="group flex items-center gap-3 rounded-[3px] border border-border bg-surface-2 px-3 py-2"
+                      className="group flex items-center gap-3 rounded-card border border-border bg-surface-2 px-3 py-2.5 shadow-sm"
                     >
                       <Badge tone="neutral" className="uppercase">{mat.source_type}</Badge>
                       <div className="min-w-0 flex-1">

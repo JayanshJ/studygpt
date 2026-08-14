@@ -11,6 +11,7 @@ import type { SourceEntry, Message } from "@/lib/db/schema";
 export interface ChunkEmb {
   materialId: string;
   ordinal: number;
+  page: number | null;
   text: string;
   materialTitle: string;
   embedding: Buffer;
@@ -214,7 +215,7 @@ export async function retrieve(opts: {
 
         // --- Semantic scoring (for non-explicit selection) ------------
         const qVec = new Float32Array(await embedText(cleanQuery));
-        const scored = scoreChunks(qVec, chunks.map((c) => ({ materialId: c.materialId, ordinal: c.ordinal, text: c.text, materialTitle: c.materialTitle ?? "", embedding: c.embedding })), { masteryByConcept, conceptsForChunk });
+        const scored = scoreChunks(qVec, chunks.map((c) => ({ materialId: c.materialId, ordinal: c.ordinal, page: c.page, text: c.text, materialTitle: c.materialTitle ?? "", embedding: c.embedding })), { masteryByConcept, conceptsForChunk });
         const eligible = scored; // already floored + sorted
 
         // Material routing: per-material max chunk score → rank → top 4
@@ -240,7 +241,7 @@ export async function retrieve(opts: {
         const chunkIndex = new Map<string, ChunkEmb>();
         for (const c of chunks) {
           if (selectedMatSet.has(c.materialId)) {
-            chunkIndex.set(`${c.materialId}:${c.ordinal}`, { materialId: c.materialId, ordinal: c.ordinal, text: c.text, materialTitle: c.materialTitle ?? "", embedding: c.embedding });
+            chunkIndex.set(`${c.materialId}:${c.ordinal}`, { materialId: c.materialId, ordinal: c.ordinal, page: c.page, text: c.text, materialTitle: c.materialTitle ?? "", embedding: c.embedding });
           }
         }
 
@@ -317,6 +318,7 @@ export async function retrieve(opts: {
             title: s.c.materialTitle,
             snippet: s.c.text.slice(0, 240),
             ordinal: s.c.ordinal,
+            page: s.c.page ?? null,
             ...(concepts.length ? { concepts } : {}),
           } satisfies SourceEntry;
         });

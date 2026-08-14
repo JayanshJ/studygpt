@@ -6,9 +6,11 @@ import { extractConceptsForProject } from "@/lib/concepts/extract";
 // POST /api/concepts/extract — build (or refresh) the concept graph for a
 // project. Preflights the chat model so a down backend returns a clean 502
 // BEFORE any extraction runs (no partial DB state). Extraction is idempotent:
-// materials whose text is unchanged since last extraction are skipped.
+// materials whose text is unchanged since last extraction are skipped. Pass
+// `force: true` to wipe the existing graph + extraction records and re-extract
+// every ready material from scratch (use after changing the prompt/granularity).
 export async function POST(req: Request) {
-  const { projectId } = await req.json().catch(() => ({}));
+  const { projectId, force } = await req.json().catch(() => ({}));
   if (typeof projectId !== "string" || !projectId.trim()) {
     return NextResponse.json({ error: "projectId required" }, { status: 400 });
   }
@@ -27,5 +29,5 @@ export async function POST(req: Request) {
       { status: 502 },
     );
   }
-  return NextResponse.json(await extractConceptsForProject(projectId));
+  return NextResponse.json(await extractConceptsForProject(projectId, { force: force === true }));
 }

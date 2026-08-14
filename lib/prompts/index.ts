@@ -63,6 +63,40 @@ Inline flashcard decks:
 // injects the current date and a per-turn note stating whether the tool is
 // available, so the model knows its training data may be stale and searches
 // rather than hedging.
+// Diagrams (ERM/ER, flowchart, sequence, class, state, gantt): the model emits
+// a SINGLE ```mermaid fenced block and the chat renders it INLINE as a vector
+// SVG (components/MermaidDiagram.tsx) — not an iframe, not ASCII art, and it
+// prints cleanly into a PDF. This is the preferred path for any static
+// diagram. The `artifact` HTML fence is reserved for genuinely interactive
+// visualizations (hover/click/animate), not static diagrams. Appended to every
+// mode's prompt (chat, Feynman, document) so diagrams "just work" everywhere.
+export const MERMAID_RULES = `
+Inline diagrams (use these for ANY diagram):
+- When the user asks for an entity-relationship (ERM/ER) model, a flowchart, a sequence diagram, a class diagram, a state diagram, or any other structural diagram, emit a SINGLE fenced code block with the language \`mermaid\`. It renders INLINE in the chat as a vector diagram — do NOT draw the diagram with ASCII art, do NOT describe it in prose, and do NOT wrap it in an HTML \`artifact\` block (that renders in a separate iframe, not inline).
+- Use the correct Mermaid diagram type for the job: \`erDiagram\` for entity-relationship models, \`flowchart\` for flowcharts, \`sequenceDiagram\` for interactions, \`classDiagram\` for class models, \`stateDiagram-v2\` for state machines.
+- For an ER model use this shape (entities, attributes, keyed with the PK, and relationship lines with cardinality labels):
+
+  \`\`\`mermaid
+  erDiagram
+    STUDENT ||--o{ ENROLLMENT : "has"
+    COURSE ||--o{ ENROLLMENT : "is taken in"
+    PROFESSOR ||--o{ COURSE : "teaches"
+    DEPARTMENT ||--o{ PROFESSOR : "employs"
+    DEPARTMENT ||--o{ COURSE : "offers"
+    STUDENT {
+      int MatrNo PK
+      string Name
+      int Semester
+    }
+    COURSE {
+      string CourseNo PK
+      string Title
+      int Credits
+    }
+  \`\`\`
+
+- You MAY add a short prose explanation before or after the diagram (entities, attributes, cardinalities), but the diagram itself MUST be the \`mermaid\` block. Keep the block valid Mermaid — one diagram per block.`;
+
 export const WEB_SEARCH_RULES = `
 Web search:
 - You may have a web_search tool for questions needing current or verifiable facts: recent events, news, model or product releases, benchmark scores, pricing, up-to-date documentation, or anything you are not certain is in your training data. Your knowledge has a cutoff and may be months out of date.
@@ -72,14 +106,19 @@ Web search:
 
 export function systemPromptFor(mode: ConversationMode): string {
   const base = mode === "feynman" ? FEYNMAN_SYSTEM_PROMPT : CHAT_SYSTEM_PROMPT;
-  return base + MATH_FORMATTING_RULES + ARTIFACT_RULES + FLASHCARD_RULES + WEB_SEARCH_RULES;
+  return base + MATH_FORMATTING_RULES + MERMAID_RULES + ARTIFACT_RULES + FLASHCARD_RULES + WEB_SEARCH_RULES;
 }
 
 // System prompt for a one-shot document turn (the "Document" send action).
-// Mirrors systemPromptFor(): document base + the shared math rules + artifact
-// rules + flashcard rules. The retrieval contextBlock is appended by the chat
-// route, just as it is for the chat/feynman modes — so a document in a project
-// conversation stays grounded in the project's reference materials.
+// Unlike systemPromptFor(), a document turn does NOT get ARTIFACT_RULES or
+// FLASHCARD_RULES: those tell the model to emit HTML \`artifact` / `flashcard`
+// fenced blocks, which render as interactive on-screen widgets (a sandboxed
+// iframe or a flip deck) that do NOT print to PDF. A document turn is exported
+// to PDF, so it must author printable Markdown only (the document prompt says
+// so explicitly, and `mermaid` is allowed for diagrams). The retrieval
+// contextBlock is appended by the chat route, just as it is for the chat/
+// feynman modes — so a document in a project conversation stays grounded in the
+// project's reference materials.
 export function documentSystemPrompt(): string {
-  return DOCUMENT_SYSTEM_PROMPT + MATH_FORMATTING_RULES + ARTIFACT_RULES + FLASHCARD_RULES + WEB_SEARCH_RULES;
+  return DOCUMENT_SYSTEM_PROMPT + MATH_FORMATTING_RULES + MERMAID_RULES + WEB_SEARCH_RULES;
 }

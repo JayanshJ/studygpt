@@ -7,7 +7,13 @@ const nextConfig: NextConfig = {
   //   script / lang data relative to its package at runtime; bundling under
   //   turbopack breaks that resolution and hangs createWorker. Externalizing
   //   lets Node require the real package path so the worker spawns correctly.
-  serverExternalPackages: ["better-sqlite3", "tesseract.js"],
+  // - puppeteer: resolves its downloaded Chromium binary relative to its
+  //   package at runtime; bundling under turbopack breaks that resolution and
+  //   launch() hangs. Externalizing lets Node require the real package path.
+  // - mupdf: WASM-based PDF renderer (page → JPEG for the diagram vision
+  //   pipeline). Bundling under turbopack breaks the WASM loader; externalizing
+  //   lets Node load it as a real package.
+  serverExternalPackages: ["better-sqlite3", "tesseract.js", "puppeteer", "mupdf"],
 };
 
 export default nextConfig;

@@ -1,5 +1,6 @@
 import { db } from "./index";
 import type { Material, MaterialSourceType, MaterialStatus } from "./schema";
+import { deletePageImages, deleteSourcePdf } from "@/lib/ingest/pdf-pages";
 
 export function createMaterial(init: {
   projectId: string;
@@ -36,6 +37,17 @@ export function getMaterial(id: string): Material | undefined {
   return db.prepare("SELECT * FROM materials WHERE id = ?").get(id) as Material | undefined;
 }
 
+// Find a PDF material in a project by its source_ref (the upload filename
+// without .pdf). Used by heal-on-reupload: when the user re-uploads a file
+// whose name matches an existing deck that predates page-image rendering, we
+// heal that deck (attach the PDF + render pages) instead of creating a
+// duplicate — so the concept graph and chunks stay intact.
+export function findPdfMaterialByRef(projectId: string, sourceRef: string): Material | undefined {
+  return db
+    .prepare("SELECT * FROM materials WHERE project_id = ? AND source_type = 'pdf' AND source_ref = ? LIMIT 1")
+    .get(projectId, sourceRef) as Material | undefined;
+}
+
 export function updateMaterialStatus(
   id: string,
   status: MaterialStatus,
@@ -54,31 +66,43 @@ export function updateMaterialStatus(
 }
 
 export function deleteMaterial(id: string): void {
-  // ON DELETE CASCADE drops chunks.
+  // ON DELETE CASCADE drops chunks; also remove any rendered page images and
+  // the retained source PDF on disk so we don't orphan files when their
+  // material row goes away.
+  deletePageImages(id);
+  deleteSourcePdf(id);
   db.prepare("DELETE FROM materials WHERE id = ?").run(id);
 }
 
-export function addChunk(materialId: string, ordinal: number, text: string, embedding: Buffer): void {
+export function addChunk(
+  materialId: string,
+  ordinal: number,
+  text: string,
+  embedding: Buffer,
+  page: number | null = null,
+): void {
   db.prepare(
-    "INSERT INTO chunks (id, material_id, ordinal, text, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(crypto.randomUUID(), materialId, ordinal, text, embedding, Date.now());
+    "INSERT INTO chunks (id, material_id, ordinal, text, embedding, page, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(crypto.randomUUID(), materialId, ordinal, text, embedding, page, Date.now());
 }
 
 // Insert all chunks for a material inside a single transaction so a mid-loop
 // failure leaves no partial chunks. Used by ingestFromText.
 export function addChunks(
   materialId: string,
-  chunks: { text: string; embedding: Buffer; ordinal: number }[],
+  chunks: { text: string; embedding: Buffer; ordinal: number; page: number | null }[],
 ): void {
   const insert = db.prepare(
-    "INSERT INTO chunks (id, material_id, ordinal, text, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO chunks (id, material_id, ordinal, text, embedding, page, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   );
-  const run = db.transaction((rows: { text: string; embedding: Buffer; ordinal: number }[]) => {
-    const now = Date.now();
-    for (const r of rows) {
-      insert.run(crypto.randomUUID(), materialId, r.ordinal, r.text, r.embedding, now);
-    }
-  });
+  const run = db.transaction(
+    (rows: { text: string; embedding: Buffer; ordinal: number; page: number | null }[]) => {
+      const now = Date.now();
+      for (const r of rows) {
+        insert.run(crypto.randomUUID(), materialId, r.ordinal, r.text, r.embedding, r.page, now);
+      }
+    },
+  );
   run(chunks);
 }
 
@@ -88,12 +112,13 @@ export function listChunkEmbeddingsForProject(projectId: string): {
   materialId: string;
   materialTitle: string;
   ordinal: number;
+  page: number | null;
   text: string;
   embedding: Buffer;
 }[] {
   return db
     .prepare(
-      `SELECT c.id AS chunkId, c.material_id AS materialId, c.ordinal, c.text, c.embedding, m.title AS materialTitle
+      `SELECT c.id AS chunkId, c.material_id AS materialId, c.ordinal, c.page, c.text, c.embedding, m.title AS materialTitle
        FROM chunks c JOIN materials m ON m.id = c.material_id
        WHERE m.project_id = ? AND m.status = 'ready'
        ORDER BY c.material_id, c.ordinal`,
@@ -110,4 +135,10 @@ export function listChunksForMaterial(materialId: string): { id: string; ordinal
   return db
     .prepare("SELECT id, ordinal, text FROM chunks WHERE material_id = ? ORDER BY ordinal ASC")
     .all(materialId) as { id: string; ordinal: number; text: string }[];
+}
+
+// Set a single chunk's page (used by the chunk-page back-fill migration, which
+// re-derives page numbers for chunks ingested before the page column existed).
+export function setChunkPage(chunkId: string, page: number): void {
+  db.prepare("UPDATE chunks SET page = ? WHERE id = ?").run(page, chunkId);
 }

@@ -8,9 +8,9 @@ type Size = "sm" | "md" | "icon";
 const variants: Record<Variant, string> = {
   // Filled ink — the old .btn-primary pattern, now sans chrome.
   primary:
-    "bg-ink text-paper-2 hover:opacity-90 active:opacity-100 focus-visible:ring-ring",
+    "bg-ink text-paper-2 shadow-sm hover:-translate-y-px hover:opacity-90 active:translate-y-0 active:opacity-100 focus-visible:ring-ring",
   secondary:
-    "border border-border bg-surface text-content hover:bg-surface-2 hover:border-border-strong focus-visible:ring-ring",
+    "border border-border bg-surface text-content shadow-sm hover:-translate-y-px hover:bg-surface-2 hover:border-border-strong active:translate-y-0 focus-visible:ring-ring",
   ghost:
     "bg-transparent text-content-muted hover:bg-surface-2 hover:text-content focus-visible:ring-ring",
   accent:
@@ -20,9 +20,9 @@ const variants: Record<Variant, string> = {
 };
 
 const sizes: Record<Size, string> = {
-  sm: "h-8 px-3 text-xs gap-1.5 rounded-[3px]",
-  md: "h-9 px-4 text-[13px] gap-2 rounded-[3px]",
-  icon: "h-9 w-9 rounded-[3px] justify-center",
+  sm: "h-8 px-3 text-xs gap-1.5 rounded-control",
+  md: "h-10 px-4 text-[13px] gap-2 rounded-control",
+  icon: "h-10 w-10 rounded-control justify-center",
 };
 
 export interface ButtonProps
@@ -41,7 +41,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <Comp
         ref={ref}
         className={cn(
-          "inline-flex items-center font-medium leading-none whitespace-nowrap select-none transition-[opacity,background-color,border-color,color] duration-fast ease-out outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex items-center font-medium leading-none whitespace-nowrap select-none transition-[transform,opacity,background-color,border-color,color,box-shadow] duration-fast ease-out outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:pointer-events-none disabled:opacity-50",
           variants[variant],
           sizes[size],
           className,

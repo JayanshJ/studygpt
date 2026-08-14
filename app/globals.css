@@ -22,7 +22,11 @@
   --rose: #c0445a;        /* muted rose — slipping / danger */
   --line: #e6e6e9;
   --grid: transparent;
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-card: 0 8px 24px rgba(24, 24, 27, 0.06), 0 2px 6px rgba(24, 24, 27, 0.04);
+  --shadow-float: 0 20px 54px rgba(24, 24, 27, 0.14), 0 6px 18px rgba(24, 24, 27, 0.08);
+  --radius-control: 0.375rem;
+  --radius-card: 0.5rem;
+  --radius-panel: 0.75rem;
 
   /* motion (unchanged values) */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -66,7 +70,8 @@ html[data-theme="dark"] {
   --rose: #e06a7c;
   --line: #262629;
   --grid: transparent;
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.5);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.18);
+  --shadow-float: 0 20px 54px rgba(0, 0, 0, 0.45), 0 6px 18px rgba(0, 0, 0, 0.3);
 
   --surface: var(--paper-2);
   --surface-2: var(--paper-3);
@@ -126,6 +131,13 @@ html[data-theme="dark"] {
   --font-serif: var(--font-newsreader), Georgia, "Times New Roman", serif;
   --font-mono: var(--font-jetbrains), ui-monospace, monospace;
   --shadow-card: var(--shadow-card);
+  --shadow-float: var(--shadow-float);
+
+  /* A friendly hierarchy: controls sit lightly, cards feel tactile, and
+     sheets/dialogs get their own larger silhouette. */
+  --radius-control: var(--radius-control);
+  --radius-card: var(--radius-card);
+  --radius-panel: var(--radius-panel);
 
   /* Custom breakpoint: rail appears / bottom tab bar hides at `tab` (768px). */
   --breakpoint-tab: 768px;
@@ -160,6 +172,34 @@ body {
     linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
   background-size: 22px 22px;
   background-position: -1px -1px;
+}
+
+/* The transcript and composer deliberately share one rail. The scroll gutter
+   is reserved on both sides so a visible scrollbar cannot nudge the reading
+   column off the panel's center line. */
+.chat-content,
+.chat-composer-wrapper {
+  width: min(100%, 64rem);
+  margin-inline: auto;
+}
+
+.chat-scroll {
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--ink) 24%, transparent) transparent;
+}
+
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--ink) 24%, transparent);
+  border-radius: 999px;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--ink) 38%, transparent);
 }
 
 /* Mono chrome helper. */
@@ -260,7 +300,8 @@ html[data-theme="dark"] .prose-chat code { background: rgba(255, 255, 255, 0.08)
   background: var(--paper-3);
   border: 1px solid var(--line);
   padding: 0.85em 1em;
-  border-radius: 3px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   overflow-x: auto;
   margin: 0.4em 0;
   font-size: 0.85rem;
@@ -301,8 +342,9 @@ html[data-theme="dark"] .prose-chat pre span {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.prose-chat table { border-collapse: collapse; margin: 0.4em 0; font-size: 0.92rem; }
+.prose-chat table { border-collapse: separate; border-spacing: 0; margin: 0.4em 0; font-size: 0.92rem; }
 .prose-chat th, .prose-chat td { border: 1px solid var(--line); padding: 0.45em 0.75em; }
+.prose-chat table { overflow: hidden; border-radius: var(--radius-control); border-style: hidden; box-shadow: 0 0 0 1px var(--line); }
 .prose-chat th { background: var(--paper-3); font-weight: 600; text-align: left; }
 /* Emphasis that actually reads: heavier weight + ink so bolded answers pop. */
 .prose-chat strong { font-weight: 700; color: var(--ink); }

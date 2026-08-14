@@ -157,7 +157,7 @@ export function StudySession({
       <button
         onClick={() => setFlipped((f) => !f)}
         className={cn(
-          "block w-full rounded-[4px] border bg-surface p-6 text-left shadow-card transition-[border-color] duration-fast ease-out hover:border-border-strong",
+          "block w-full rounded-panel border bg-surface p-6 text-left shadow-card transition-[transform,border-color,box-shadow] duration-fast ease-out hover:-translate-y-px hover:border-border-strong hover:shadow-float",
           bandClass,
         )}
         style={{ perspective: 1000 }}
@@ -186,7 +186,7 @@ export function StudySession({
             disabled={!flipped || submitting}
             onClick={() => handleGrade(b.grade)}
             className={cn(
-              "mono rounded-[3px] border bg-surface px-2 py-2 text-[12px] tracking-wide transition-[opacity,background-color] duration-fast ease-out",
+              "mono rounded-control border bg-surface px-3 py-2.5 text-[12px] tracking-wide transition-[transform,opacity,background-color] duration-fast ease-out hover:-translate-y-px",
               b.cls,
               !flipped || submitting ? "opacity-30" : "",
             )}

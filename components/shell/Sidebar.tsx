@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { motion } from "motion/react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NAV, isNavActive } from "./nav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { IconButton } from "@/components/ui/IconButton";
 import { useSidebarSlot } from "./sidebar-slot";
 import { cn } from "@/lib/cn";
+import { useLayoutMotion } from "@/lib/motion";
 
 // The app's single desktop sidebar (≥ `tab`). Replaces the old icon Rail: nav
 // items are labeled, and the flex-1 slot below the nav receives page-injected
@@ -21,6 +23,7 @@ import { cn } from "@/lib/cn";
 export function Sidebar() {
   const pathname = usePathname();
   const { slotRef } = useSidebarSlot();
+  const layoutTransition = useLayoutMotion();
   // Collapsed = icon rail (w-14, labels + slot hidden). Default expanded; read
   // in an effect (SSR-safe — avoids a hydration mismatch on the persisted value).
   const [collapsed, setCollapsed] = useState(false);
@@ -47,7 +50,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "hidden shrink-0 flex-col border-r border-border bg-surface-2 transition-[width] duration-fast ease-out tab:flex",
+        "hidden shrink-0 flex-col rounded-panel border border-border bg-surface-2 shadow-card transition-[width,box-shadow] duration-fast ease-out tab:flex",
         collapsed ? "w-14" : "w-64",
       )}
     >
@@ -66,7 +69,7 @@ export function Sidebar() {
               aria-current={active ? "page" : undefined}
               title={collapsed ? item.label : undefined}
               className={cn(
-                "relative inline-flex items-center rounded-[4px] text-[13px] transition-colors duration-fast ease-out outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-2",
+                "relative inline-flex items-center rounded-control text-[13px] transition-[transform,background-color,color] duration-fast ease-out hover:-translate-y-px outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-2",
                 collapsed
                   ? "h-9 w-9 justify-center"
                   : "gap-2.5 px-2.5 py-1.5",
@@ -76,9 +79,11 @@ export function Sidebar() {
               )}
             >
               {active && (
-                <span
+                <motion.span
                   aria-hidden
-                  className="absolute -left-3 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-[2px] bg-rule"
+                  layoutId="active-sidebar-indicator"
+                  transition={layoutTransition}
+                  className="absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-rule"
                 />
               )}
               <Icon size={16} strokeWidth={1.75} />

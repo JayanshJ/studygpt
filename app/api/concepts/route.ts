@@ -5,6 +5,7 @@ import {
   listConceptsForProject,
   listEdgesForProject,
   listExtractionsForProject,
+  getBuildProgress,
 } from "@/lib/db";
 import { conceptMasteryForProject } from "@/lib/db/mastery";
 
@@ -56,5 +57,7 @@ export async function GET(req: Request) {
     };
   });
 
-  return NextResponse.json({ concepts, edges, materials });
+  // Live build progress (chunk-level) if an extraction is in flight, else null.
+  const progress = getBuildProgress(projectId) ?? null;
+  return NextResponse.json({ concepts, edges, materials, progress });
 }

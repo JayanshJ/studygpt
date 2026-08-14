@@ -1,7 +1,9 @@
-import type { SourceEntry } from "@/lib/db/schema";
+import type { MessageActivity, MessageGrounding, SourceEntry } from "@/lib/db/schema";
 
 export type ChatStreamEvent =
   | { type: "status"; phase: string; label?: string }
+  | { type: "activity"; activity: MessageActivity }
+  | { type: "grounding"; grounding: MessageGrounding }
   | { type: "reasoning"; delta: string }
   | { type: "text"; delta: string }
   | { type: "sources"; sources: SourceEntry[] }

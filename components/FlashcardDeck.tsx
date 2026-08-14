@@ -70,7 +70,7 @@ export const FlashcardDeck = memo(function FlashcardDeck({
 
   if (cards.length === 0) {
     return (
-      <div className="mono my-2 rounded-[4px] border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint">
+      <div className="mono my-2 rounded-card border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint">
         no flashcards
       </div>
     );
@@ -125,7 +125,7 @@ export const FlashcardDeck = memo(function FlashcardDeck({
   }
 
   return (
-    <div className="my-2 overflow-hidden rounded-[4px] border border-border bg-surface-2 shadow-card">
+    <div className="my-3 overflow-hidden rounded-card border border-border bg-surface-2 shadow-card">
       <div className="mono flex items-center gap-2 border-b border-border bg-surface px-3 py-1.5 text-[10px] tracking-wide text-content-faint">
         <span className="h-1 w-1 rounded-full bg-rule" />
         flashcards · {total} card{total === 1 ? "" : "s"}
@@ -150,7 +150,7 @@ export const FlashcardDeck = memo(function FlashcardDeck({
             setFlipped((f) => !f);
           }
         }}
-        className="block min-h-[140px] w-full cursor-pointer border-b border-border bg-surface px-5 py-4 text-left transition-colors duration-fast ease-out hover:bg-surface-2/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-accent/40"
+        className="block min-h-[140px] w-full cursor-pointer border-b border-border bg-surface px-5 py-5 text-left transition-[background-color,transform] duration-fast ease-out hover:bg-surface-2/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-accent/40"
         aria-label={flipped ? "Show front" : "Show back"}
         style={{ perspective: 1000 }}
       >

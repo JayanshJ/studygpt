@@ -2,18 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { motion } from "motion/react";
 import { NAV, isNavActive } from "./nav";
 import { cn } from "@/lib/cn";
+import { useLayoutMotion } from "@/lib/motion";
 
 // Mobile navigation — a fixed bottom tab bar shown only below the `tab`
 // breakpoint (the desktop Rail is hidden there). Safe-area padding keeps it
 // clear of the home indicator on notched devices.
 export function BottomTabBar() {
   const pathname = usePathname();
+  const layoutTransition = useLayoutMotion();
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border bg-surface-2 pb-[env(safe-area-inset-bottom)] tab:hidden"
+      className="fixed inset-x-3 bottom-3 z-40 flex rounded-card border border-border bg-surface/95 pb-[env(safe-area-inset-bottom)] shadow-float backdrop-blur-md tab:hidden"
     >
       {NAV.map((item) => {
         const active = isNavActive(pathname, item);
@@ -30,9 +33,11 @@ export function BottomTabBar() {
           >
             <span className="relative inline-flex h-6 w-6 items-center justify-center">
               {active && (
-                <span
+                <motion.span
                   aria-hidden
-                  className="absolute -top-2 h-[2px] w-5 rounded-[2px] bg-rule"
+                  layoutId="active-bottom-tab-indicator"
+                  transition={layoutTransition}
+                  className="absolute -top-1 h-[3px] w-5 rounded-full bg-rule"
                 />
               )}
               <Icon size={19} strokeWidth={1.75} />

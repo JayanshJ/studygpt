@@ -10,6 +10,7 @@ import { CodeBlock } from "./CodeBlock";
 import { codeHighlightOptions } from "@/lib/markdown/highlight";
 import { Artifact } from "./Artifact";
 import { FlashcardDeck } from "./FlashcardDeck";
+import { MermaidDiagram } from "./MermaidDiagram";
 import { extractText } from "@/lib/markdown/extract-text";
 import { normalizeMathDelimiters } from "@/lib/markdown/normalize-math";
 
@@ -28,6 +29,7 @@ function PreBlock({
   streaming,
   conversationTitle,
   conversationId,
+  ephemeral,
 }: {
   children?: ReactNode;
   // rehype-pretty-code (shiki 4) replaces the legacy `language-xxx` class on
@@ -41,6 +43,7 @@ function PreBlock({
   streaming?: boolean;
   conversationTitle?: string;
   conversationId?: string;
+  ephemeral?: boolean;
 }) {
   const codeEl = (Array.isArray(children) ? children[0] : children) as
     | { props?: { className?: string } }
@@ -52,29 +55,47 @@ function PreBlock({
   if (lang === "artifact") {
     if (streaming) {
       return (
-        <div className="mono my-2 flex items-center gap-1.5 rounded-[3px] border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint">
+        <div className="mono my-3 flex items-center gap-1.5 rounded-card border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint shadow-sm">
           <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-rule" />
           building visualization…
         </div>
       );
     }
-    return <Artifact html={extractText(children)} />;
+    return (
+      <div data-selection-excluded>
+        <Artifact html={extractText(children)} />
+      </div>
+    );
+  }
+  if (lang === "mermaid") {
+    if (streaming) {
+      return (
+        <div className="mono my-3 flex items-center gap-1.5 rounded-card border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint shadow-sm">
+          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-rule" />
+          building diagram…
+        </div>
+      );
+    }
+    return <MermaidDiagram code={extractText(children)} />;
   }
   if (lang === "flashcard") {
     if (streaming) {
       return (
-        <div className="mono my-2 flex items-center gap-1.5 rounded-[3px] border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint">
+        <div className="mono my-3 flex items-center gap-1.5 rounded-card border border-border bg-surface-2 px-4 py-3 text-[12px] text-content-faint shadow-sm">
           <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-rule" />
           building flashcards…
         </div>
       );
     }
     return (
-      <FlashcardDeck
-        source={extractText(children)}
-        conversationTitle={conversationTitle}
-        conversationId={conversationId}
-      />
+      <div data-selection-excluded>
+        <FlashcardDeck
+          source={extractText(children)}
+          conversationTitle={conversationTitle}
+          conversationId={conversationId}
+          reviewMode={ephemeral}
+        />
+      </div>
     );
   }
   return (
@@ -99,12 +120,14 @@ export function Markdown({
   streaming,
   conversationTitle,
   conversationId,
+  ephemeral,
 }: {
   content: string;
   className?: string;
   streaming?: boolean;
   conversationTitle?: string;
   conversationId?: string;
+  ephemeral?: boolean;
 }) {
   return (
     <div className={className}>
@@ -118,6 +141,7 @@ export function Markdown({
               streaming={streaming}
               conversationTitle={conversationTitle}
               conversationId={conversationId}
+              ephemeral={ephemeral}
             />
           ),
         }}

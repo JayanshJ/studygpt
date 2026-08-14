@@ -3,9 +3,12 @@ import { convert as htmlToText } from "html-to-text";
 import { updateMaterialStatus, addChunks } from "@/lib/db/materials";
 import { embedManyTexts, encodeEmbedding } from "@/lib/embed";
 import { safeFetch } from "./ssrf";
+import { chunkText } from "./chunk";
+import { saveSourcePdf, renderPdfPages } from "./pdf-pages";
 
-const TARGET = 800;
-const OVERLAP = 100;
+// Pure chunking lives in ./chunk (shared with the chunk-page back-fill
+// migration). Re-exported here for existing callers.
+export { chunkText };
 
 // --- Extraction helpers (called by the materials route) ----------------------
 
@@ -15,8 +18,15 @@ export async function extractPdf(
   // unpdf exposes `extractText` (not `extractPdf`) and a separate `getMeta`
   // for document metadata. Reuse one parsed document proxy for both calls so we
   // don't parse the file twice.
+  //
+  // CRITICAL: extract the text PER PAGE (mergePages: false → string[]) and join
+  // with a form feed (\f). mergePages: true joins pages with "\n" and loses the
+  // page boundaries, so chunkText's form-feed split (chunk↔page 1:1) collapses
+  // every chunk onto page 1 — which breaks the diagram notation pipeline's
+  // ability to load the right slide image. The form feed is the durable page
+  // boundary the chunker and the back-fill rely on.
   const pdf = await getDocumentProxy(bytes);
-  const { text } = await extractText(pdf, { mergePages: true });
+  const { text } = await extractText(pdf, { mergePages: false });
   let title: string | undefined;
   try {
     const { info } = await getMeta(pdf);
@@ -25,7 +35,30 @@ export async function extractPdf(
   } catch {
     // Metadata is best-effort; ignore failures.
   }
-  return { text: text ?? "", title };
+  const pages = Array.isArray(text) ? text : [text ?? ""];
+  return { text: pages.join("\f"), title };
+}
+
+// Extract the text of each PDF page as a separate string (1-indexed by array
+// position). Used by the heal path to map existing chunks onto their page
+// without re-ingesting: each chunk's text is matched against the per-page text
+// to recover the page number the original (page-boundary-losing) extraction
+// dropped.
+export async function extractPdfPages(
+  bytes: Uint8Array,
+): Promise<{ pages: string[]; title?: string }> {
+  const pdf = await getDocumentProxy(bytes);
+  const { text } = await extractText(pdf, { mergePages: false });
+  let title: string | undefined;
+  try {
+    const { info } = await getMeta(pdf);
+    const t = info?.Title;
+    title = typeof t === "string" && t.trim() ? t.trim() : undefined;
+  } catch {
+    // Metadata is best-effort; ignore failures.
+  }
+  const pages = Array.isArray(text) ? text : [text ?? ""];
+  return { pages, title };
 }
 
 export async function extractUrl(
@@ -63,52 +96,23 @@ export async function extractUrl(
   return { text, title };
 }
 
-// --- Paragraph-based chunking with overlap -----------------------------------
-// Split on blank lines, split oversized paragraphs at sentence boundaries, and
-// greedily merge into chunks <= TARGET chars while carrying OVERLAP chars of the
-// previous chunk's tail into the next so adjacent chunks share context.
-export function chunkText(text: string): string[] {
-  const clean = text.replace(/\r\n/g, "\n").replace(/[ \t]+/g, " ").trim();
-  if (!clean) return [];
-  const paragraphs = clean
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  // Further split very long paragraphs at sentence boundaries.
-  const pieces: string[] = [];
-  for (const p of paragraphs) {
-    if (p.length <= TARGET * 1.5) {
-      pieces.push(p);
-    } else {
-      const sentences = p.split(/(?<=[.!?])\s+/);
-      let buf = "";
-      for (const s of sentences) {
-        if (buf && (buf + " " + s).trim().length > TARGET) {
-          pieces.push(buf.trim());
-          buf = s;
-        } else {
-          buf = (buf ? buf + " " : "") + s;
-        }
-      }
-      if (buf.trim()) pieces.push(buf.trim());
-    }
+// Heal an existing material from its source PDF: retain the PDF on disk and
+// render its page images. Used by heal-on-reupload (re-uploading a file whose
+// name matches an existing deck that was ingested before page-image rendering
+// existed). Does NOT re-ingest: chunks, embeddings, and the concept graph are
+// left untouched. The notation pipeline then has page images to show the vision
+// model (via the precise chunk→page mapping for new decks, or the spread
+// fallback for old decks whose chunks are page-ambiguous). Returns the number
+// of page images rendered.
+export async function healMaterialFromPdf(materialId: string, bytes: Uint8Array): Promise<number> {
+  saveSourcePdf(materialId, bytes);
+  try {
+    const pages = await renderPdfPages(bytes, materialId);
+    return pages.length;
+  } catch (e) {
+    console.error(`[healMaterialFromPdf] ${materialId} render failed:`, e instanceof Error ? e.message : e);
+    return 0;
   }
-
-  // Greedily merge pieces into chunks <= TARGET, carrying OVERLAP into the next.
-  const chunks: string[] = [];
-  let cur = "";
-  for (const piece of pieces) {
-    if (cur && (cur + "\n\n" + piece).length > TARGET) {
-      chunks.push(cur);
-      const tail = cur.slice(-OVERLAP);
-      cur = tail ? tail + "\n\n" + piece : piece;
-    } else {
-      cur = cur ? cur + "\n\n" + piece : piece;
-    }
-  }
-  if (cur.trim()) chunks.push(cur.trim());
-  return chunks.filter((c) => c.length > 0);
 }
 
 // --- Ingestion: chunk, embed, store, set status ------------------------------
@@ -125,12 +129,17 @@ export async function ingestFromText(materialId: string, text: string): Promise<
       });
       return;
     }
-    const embeddings = await embedManyTexts(chunks);
+    const embeddings = await embedManyTexts(chunks.map((c) => c.text));
     // Insert all chunks in one transaction so a mid-loop failure leaves no
     // partial chunks. A throw propagates to the catch → updateMaterialStatus(error).
     addChunks(
       materialId,
-      chunks.map((c, i) => ({ text: c, embedding: encodeEmbedding(embeddings[i]), ordinal: i })),
+      chunks.map((c, i) => ({
+        text: c.text,
+        embedding: encodeEmbedding(embeddings[i]),
+        ordinal: i,
+        page: c.page,
+      })),
     );
     updateMaterialStatus(materialId, "ready", { charCount: text.length, text });
   } catch (err) {

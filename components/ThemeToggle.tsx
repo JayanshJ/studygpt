@@ -64,7 +64,7 @@ export function ThemeToggle() {
       onClick={toggle}
       aria-label={label}
       title={label}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-[3px] text-content-faint transition-colors duration-fast ease-out hover:bg-surface hover:text-content focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-2 outline-none"
+      className="inline-flex h-10 w-10 items-center justify-center rounded-control text-content-faint transition-[transform,background-color,color] duration-fast ease-out hover:-translate-y-px hover:bg-surface hover:text-content focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-2 outline-none"
     >
       {/* Render a stable icon until mounted to avoid a hydration mismatch; the
           no-flash script has already set the correct page theme. */}

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { createMaterial, getMaterial, getProject, updateMaterialStatus } from "@/lib/db";
+import { createMaterial, getMaterial, getProject, updateMaterialStatus, findPdfMaterialByRef } from "@/lib/db";
 import { getModelConfig, getProvider } from "@/lib/llm/provider";
-import { extractPdf, extractUrl, ingestFromText } from "@/lib/ingest";
+import { extractPdf, extractUrl, ingestFromText, healMaterialFromPdf } from "@/lib/ingest";
+import { saveSourcePdf, renderPdfPages, hasSourcePdf } from "@/lib/ingest/pdf-pages";
 
 // POST /api/materials — multipart/form-data: { projectId, title?, file? | url? }
 // or JSON: { projectId, title?, url }. Creates a material (status=processing),
@@ -44,12 +45,40 @@ export async function POST(req: Request) {
   // and title fallback — so materials are named after the file, not "uploaded.pdf".
   const baseName = fileName ? fileName.replace(/\.pdf$/i, "") : undefined;
   const sourceRef = pdfBytes ? baseName || title || "uploaded.pdf" : url!;
+
+  // Heal-on-reupload: if a PDF is uploaded whose filename matches an EXISTING
+  // deck in this project that was ingested before page-image rendering existed
+  // (so it has no retained source PDF), heal that deck instead of creating a
+  // duplicate. Healing = retain the PDF + render page images. No re-ingest, so
+  // chunks/embeddings/concept graph stay intact (no rebuild). This is the
+  // one-time, no-rebuild path to make old decks notation-aware.
+  if (pdfBytes && baseName) {
+    const existing = findPdfMaterialByRef(projectId, baseName);
+    if (existing && !hasSourcePdf(existing.id)) {
+      const rendered = await healMaterialFromPdf(existing.id, pdfBytes);
+      console.log(`[heal] re-upload attached PDF to existing material ${existing.id}; rendered ${rendered} page images`);
+      return NextResponse.json(getMaterial(existing.id), { status: 200 });
+    }
+  }
+
   const material = createMaterial({
     projectId,
     title: title?.trim() || sourceRef,
     sourceType,
     sourceRef,
   });
+
+  // Retain the source PDF so page images can be (re-)rendered on demand later
+  // (lazy render on first diagram turn, or future re-extraction). Without this,
+  // a one-shot render failure or a feature added after upload leaves the
+  // material with no page images and no way to recover short of re-uploading.
+  if (pdfBytes) {
+    try {
+      saveSourcePdf(material.id, pdfBytes);
+    } catch (e) {
+      console.error(`[saveSourcePdf] ${material.id} failed:`, e instanceof Error ? e.message : e);
+    }
+  }
 
   // Preflight the embedding model before extraction+ingestion. If the
   // embedding model (default nomic-embed-text) isn't pulled, ingestion would
@@ -77,6 +106,21 @@ export async function POST(req: Request) {
   } catch (err) {
     updateMaterialStatus(material.id, "error", {
       error: err instanceof Error ? err.message : "Extraction failed",
+    });
+  }
+
+  // Best-effort: render each PDF page to a JPEG on disk so the diagram vision
+  // pipeline can feed the relevant slide pages to a vision model (text
+  // extraction loses the diagram notation, which lives in the page images).
+  // Non-fatal — a render failure never blocks text ingestion; the material is
+  // already `ready`/`error` from ingestFromText above.
+  if (pdfBytes) {
+    // Best-effort, but LOG on failure: a silent catch here leaves the diagram
+    // notation pipeline with no page images and the only symptom is "diagrams
+    // don't follow my notation" — impossible to debug. Surface the error so a
+    // mupdf/WASM runtime failure shows up in the server log.
+    await renderPdfPages(pdfBytes, material.id).catch((e) => {
+      console.error(`[renderPdfPages] ${material.id} failed:`, e instanceof Error ? e.message : e);
     });
   }
 

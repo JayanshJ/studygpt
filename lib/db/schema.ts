@@ -21,6 +21,7 @@ export const SCHEMA_SQL = [
     role TEXT NOT NULL,
     content TEXT NOT NULL,
     kind TEXT NOT NULL DEFAULT 'chat',
+    delivery_state TEXT NOT NULL DEFAULT 'complete',
     created_at INTEGER NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
   )`,
@@ -37,6 +38,16 @@ export const SCHEMA_SQL = [
     name TEXT NOT NULL,
     created_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS project_memory (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_project_memory_project ON project_memory(project_id, updated_at DESC)`,
   `CREATE TABLE IF NOT EXISTS materials (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -56,6 +67,7 @@ export const SCHEMA_SQL = [
     ordinal INTEGER NOT NULL,
     text TEXT NOT NULL,
     embedding BLOB NOT NULL,
+    page INTEGER,
     created_at INTEGER NOT NULL,
     FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
   )`,
@@ -63,6 +75,25 @@ export const SCHEMA_SQL = [
     message_id TEXT PRIMARY KEY,
     sources TEXT NOT NULL,          -- JSON array
     created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS message_activities (
+    message_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    phase TEXT NOT NULL,
+    label TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (message_id, ordinal),
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS message_grounding (
+    message_id TEXT PRIMARY KEY,
+    material_ids TEXT NOT NULL DEFAULT '[]',
+    source_count INTEGER NOT NULL DEFAULT 0,
+    used_web INTEGER NOT NULL DEFAULT 0,
+    used_notation INTEGER NOT NULL DEFAULT 0,
+    model TEXT,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
   )`,
   `CREATE INDEX IF NOT EXISTS idx_chunks_material ON chunks(material_id)`,
   // Saved flashcard decks (from an inline ```flashcard block in chat, or
@@ -163,6 +194,17 @@ export const SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_concept_sources_concept ON concept_sources(concept_id)`,
   `CREATE INDEX IF NOT EXISTS idx_concept_sources_material ON concept_sources(material_id)`,
   `CREATE INDEX IF NOT EXISTS idx_material_extractions_project ON material_extractions(project_id)`,
+  // Ephemeral build progress for the concept-graph extraction: how many chunks
+  // have been processed out of the total. Written by the extract POST as chunks
+  // complete, read by the GET /api/concepts poll so the UI can render a live
+  // progress bar. One row per project; cleared when the build finishes.
+  `CREATE TABLE IF NOT EXISTS build_progress (
+    project_id TEXT PRIMARY KEY,
+    processed INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    started_at INTEGER NOT NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+  )`,
   // --- Phase 3: SRS (SP3) ---
   `CREATE TABLE IF NOT EXISTS card_scheduling (
     card_id     TEXT PRIMARY KEY,
@@ -204,6 +246,56 @@ export const SCHEMA_SQL = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_card_concepts_card ON card_concepts(card_id)`,
   `CREATE INDEX IF NOT EXISTS idx_card_concepts_concept ON card_concepts(concept_id)`,
+  // --- Diagram notation cache (vision pipeline) ---
+  // One reusable text note per (project, diagram type) describing how THIS
+  // course draws that kind of diagram (shapes, symbols, line styles,
+  // cardinality markers, layout). Populated lazily on the first diagram
+  // request of that type: a short vision call reads the slide page images and
+  // writes the note; every later diagram request of the same type reuses the
+  // note with the cheap text model (no vision call, no image payloads).
+  // material_ids is a JSON array of the slide materials the note was derived
+  // from — if any of them no longer exist in the project (e.g. the deck was
+  // deleted + re-uploaded, which creates new material ids) the note is treated
+  // as stale and re-extracted.
+  `CREATE TABLE IF NOT EXISTS diagram_notation (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    diagram_type TEXT NOT NULL,
+    notation_note TEXT NOT NULL,
+    material_ids TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    UNIQUE(project_id, diagram_type)
+  )`,
+  // Saved contextual discussions. One thread is reused when the same passage
+  // in the same answer is selected again, so closing an overlay only hides it;
+  // the discussion remains available through its source highlight.
+  `CREATE TABLE IF NOT EXISTS overlay_threads (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    source_message_id TEXT NOT NULL,
+    selected_text TEXT NOT NULL,
+    text_offset INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE CASCADE,
+    UNIQUE(conversation_id, source_message_id, selected_text, text_offset)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_overlay_threads_conversation
+     ON overlay_threads(conversation_id, source_message_id, updated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS overlay_messages (
+    id TEXT PRIMARY KEY,
+    overlay_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    reasoning TEXT,
+    sources TEXT,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (overlay_id) REFERENCES overlay_threads(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_overlay_messages_thread
+     ON overlay_messages(overlay_id, created_at)`,
 ] as const;
 
 export type ConversationMode = "chat" | "feynman";
@@ -213,6 +305,7 @@ export type ConversationMode = "chat" | "feynman";
 // so the chat renders it as a document card with a Print/Save-as-PDF action
 // rather than a normal chat bubble.
 export type MessageKind = "chat" | "document";
+export type MessageDeliveryState = "complete" | "interrupted";
 
 export interface Conversation {
   id: string;
@@ -229,12 +322,27 @@ export interface Message {
   role: "user" | "assistant" | "system";
   content: string;
   kind: MessageKind;
+  delivery_state: MessageDeliveryState;
   attachments: Attachment[] | null;
   // Rough token estimate (see lib/tokens). Stored so the global token count in
   // Settings is a single SUM, not a full table scan in the client. Null only
   // for rows created before the column existed (backfilled at db open).
   tokens: number | null;
   created_at: number;
+}
+
+export interface MessageActivity {
+  phase: string;
+  label: string;
+  ordinal: number;
+}
+
+export interface MessageGrounding {
+  materialIds: string[];
+  sourceCount: number;
+  usedNotation: boolean;
+  usedWeb: boolean;
+  model: string | null;
 }
 
 export type MaterialStatus = "processing" | "ready" | "error";
@@ -244,6 +352,15 @@ export interface Project {
   id: string;
   name: string;
   created_at: number;
+}
+
+export interface ProjectMemoryEntry {
+  id: string;
+  project_id: string;
+  content: string;
+  active: boolean;
+  created_at: number;
+  updated_at: number;
 }
 
 // A saved flashcard deck. `conversation_id` is the chat it came from (nullable;
@@ -318,7 +435,31 @@ export interface SourceEntry {
   title: string;
   snippet: string;
   ordinal: number;
+  // 1-indexed PDF page this chunk came from (null for URL materials with no
+  // pages, or for chunks ingested before the page column existed). The diagram
+  // vision pipeline uses it to load the matching slide page image.
+  page?: number | null;
   concepts?: { label: string; band: Band }[];
+}
+
+export interface OverlayThread {
+  id: string;
+  conversation_id: string;
+  source_message_id: string;
+  selected_text: string;
+  text_offset: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface OverlayMessage {
+  id: string;
+  overlay_id: string;
+  role: "user" | "assistant";
+  content: string;
+  reasoning: string | null;
+  sources: SourceEntry[];
+  created_at: number;
 }
 
 // --- Phase 3 (SP1): concept graph types ---

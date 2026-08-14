@@ -17,7 +17,7 @@ export function SelectTrigger({
   return (
     <SelectPrimitive.Trigger
       className={cn(
-        "mono inline-flex h-9 w-full items-center justify-between gap-2 rounded-[3px] border border-border bg-surface px-3 text-[12px] text-content transition-[border-color] duration-fast ease-out hover:border-border-strong focus:border-border-strong focus-visible:ring-2 focus-visible:ring-ring-accent/60 outline-none data-[placeholder]:text-content-faint disabled:opacity-50",
+        "mono inline-flex h-10 w-full items-center justify-between gap-2 rounded-control border border-border bg-surface px-3.5 text-[12px] text-content shadow-sm transition-[border-color,box-shadow] duration-fast ease-out hover:border-border-strong focus:border-border-strong focus-visible:ring-2 focus-visible:ring-ring-accent/60 outline-none data-[placeholder]:text-content-faint disabled:opacity-50",
         className,
       )}
       {...props}
@@ -39,7 +39,7 @@ export function SelectContent({
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
         className={cn(
-          "relative z-50 max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[3px] border border-border-strong bg-surface shadow-card",
+          "relative z-50 max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-card border border-border-strong bg-surface p-1 shadow-float",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
@@ -47,7 +47,7 @@ export function SelectContent({
         sideOffset={4}
         {...props}
       >
-        <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
+        <SelectPrimitive.Viewport>{children}</SelectPrimitive.Viewport>
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
   );
@@ -61,7 +61,7 @@ export function SelectItem({
   return (
     <SelectPrimitive.Item
       className={cn(
-        "mono relative flex w-full cursor-pointer select-none items-center rounded-[2px] py-1.5 pl-7 pr-2 text-[12px] text-content outline-none data-[highlighted]:bg-surface-2 data-[highlighted]:text-ink data-[state=checked]:text-ink",
+        "mono relative flex w-full cursor-pointer select-none items-center rounded-control py-2 pl-7 pr-2 text-[12px] text-content outline-none data-[highlighted]:bg-surface-2 data-[highlighted]:text-ink data-[state=checked]:text-ink",
         className,
       )}
       {...props}

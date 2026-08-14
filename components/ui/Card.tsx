@@ -12,7 +12,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "relative border border-border bg-surface rounded-[3px] shadow-card",
+        "relative border border-border bg-surface rounded-card shadow-card",
         className,
       )}
       {...props}
@@ -20,7 +20,7 @@ export function Card({
       {accent && (
         <span
           aria-hidden
-          className="absolute left-0 top-3.5 bottom-3.5 w-[2px] rounded-[2px] bg-rule"
+          className="absolute left-0 top-4 bottom-4 w-[3px] rounded-full bg-rule"
         />
       )}
       {props.children}

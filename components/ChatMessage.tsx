@@ -5,10 +5,15 @@ import { motion } from "motion/react";
 import { Copy, Check, RefreshCw, Pencil, Download, X, Paperclip } from "lucide-react";
 import { Markdown } from "./Markdown";
 import { SourcesPanel } from "./SourcesPanel";
+import { OverlaySourceMarkers } from "./chat/OverlaySourceMarkers";
+import { AnswerInsights } from "./chat/AnswerInsights";
 import { IconButton } from "@/components/ui/IconButton";
 import { Button } from "@/components/ui/Button";
 import { useMotion, fadeUp } from "@/lib/motion";
-import type { SourceEntry, Attachment } from "@/lib/db/schema";
+import { normalizeLabel } from "@/lib/concepts/slug";
+import type { SourceEntry, Attachment, MessageActivity, MessageGrounding } from "@/lib/db/schema";
+import type { OverlayAnchor } from "@/lib/chat/overlay-threads";
+import { interruptedReplyLabel } from "@/lib/chat/delivery-state";
 
 // Shallow equality on the attachments an edit produced vs. the originals, so
 // we only persist (and re-run) when something actually changed. Compares by
@@ -36,8 +41,11 @@ interface Props {
   content: string;
   streaming?: boolean;
   sources?: SourceEntry[];
+  activities?: MessageActivity[];
+  grounding?: MessageGrounding | null;
   attachments?: Attachment[] | null;
   kind?: "chat" | "document";
+  deliveryState?: "complete" | "interrupted";
   id?: string;
   onCopy?: () => void;
   onRegenerate?: () => void;
@@ -46,16 +54,31 @@ interface Props {
   conversationTitle?: string;
   conversationId?: string;
   status?: string;
+  // Server-supplied dynamic label, preferred over the static STATUS_LABELS
+  // map so the UI can show data-driven steps like "found 3 relevant
+  // passages…" or 'searching the web for "…"' without a code change per phase.
+  statusLabel?: string;
   reasoning?: string;
   allMaterials?: { id: string; title: string }[];
+  ephemeral?: boolean;
+  overlayAnchors?: OverlayAnchor[];
+  onOpenOverlay?: (anchor: OverlayAnchor) => void;
 }
 
 const STATUS_LABELS: Record<string, string> = {
   thinking: "thinking…",
   "reading-materials": "reading your materials…",
+  "searching-materials": "searching your materials…",
+  "found-sources": "reading your materials…",
   "drafting-document": "drafting document…",
   searching: "searching the web…",
   writing: "writing…",
+  // Diagram-notation pipeline phases (normally sent WITH a dynamic label, so
+  // these are just a safe fallback if a status event ever arrives without one).
+  "notation-reading-slides": "looking at your slides…",
+  "studying-notation": "studying your course's notation…",
+  "recalling-notation": "recalling your course's notation…",
+  "notation-ready": "drawing the diagram…",
 };
 
 export function ChatMessage({
@@ -63,8 +86,11 @@ export function ChatMessage({
   content,
   streaming,
   sources,
+  activities,
+  grounding,
   attachments,
   kind,
+  deliveryState = "complete",
   id,
   onCopy,
   onRegenerate,
@@ -73,14 +99,19 @@ export function ChatMessage({
   conversationTitle,
   conversationId,
   status,
+  statusLabel,
   reasoning,
   allMaterials,
+  ephemeral = false,
+  overlayAnchors = [],
+  onOpenOverlay,
 }: Props) {
   const isUser = role === "user";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content);
   const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
   const [copied, setCopied] = useState(false);
+  const [pdfState, setPdfState] = useState<"idle" | "rendering" | "done" | "error">("idle");
   const m = useMotion();
 
   async function copy() {
@@ -120,6 +151,32 @@ export function ChatMessage({
     setEditing(true);
   }
 
+  // Hit the server-side PDF route and trigger a real .pdf download — no new
+  // tab, no second click. The route renders the existing /print/[id] page in
+  // headless Chromium and returns the bytes; we just blob+download them.
+  async function downloadPdf() {
+    if (!id || pdfState === "rendering") return;
+    setPdfState("rendering");
+    try {
+      const res = await fetch(`/api/messages/${id}/pdf`);
+      if (!res.ok) throw new Error(res.statusText || "render failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${normalizeLabel(conversationTitle ?? "") || "document"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setPdfState("done");
+      setTimeout(() => setPdfState("idle"), 1500);
+    } catch {
+      setPdfState("error");
+      setTimeout(() => setPdfState("idle"), 2000);
+    }
+  }
+
   if (isUser && editing) {
     return (
       <motion.div {...m} variants={fadeUp}>
@@ -137,7 +194,7 @@ export function ChatMessage({
             }
           }}
           rows={Math.min(8, Math.max(1, draft.split("\n").length))}
-          className="mono w-full resize-none rounded-[3px] border border-border bg-surface-2/40 px-3 py-2 text-[13px] leading-6 text-ink outline-none focus:border-border-strong focus-visible:ring-2 focus-visible:ring-ring-accent/60"
+          className="mono w-full resize-none rounded-card border border-border bg-surface-2/40 px-3.5 py-3 text-[13px] leading-6 text-ink outline-none focus:border-border-strong focus-visible:ring-2 focus-visible:ring-ring-accent/60"
         />
         {draftAttachments.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2 pl-5">
@@ -147,7 +204,7 @@ export function ChatMessage({
                   <img
                     src={a.dataUrl}
                     alt={a.name}
-                    className="max-h-20 rounded-[3px] border border-border object-contain"
+                    className="max-h-20 rounded-control border border-border object-contain"
                   />
                   <button
                     type="button"
@@ -161,7 +218,7 @@ export function ChatMessage({
               ) : (
                 <span
                   key={i}
-                  className="mono flex items-center gap-1.5 rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[11px] text-content-muted"
+                  className="mono flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-content-muted"
                 >
                   <Paperclip size={11} /> {a.name} ({a.charCount.toLocaleString()}c)
                   <button
@@ -192,7 +249,7 @@ export function ChatMessage({
   if (isUser) {
     return (
       <motion.div {...m} variants={fadeUp} className="group relative">
-        <div className="border-l-2 border-rule pl-3 font-mono italic text-[13px] leading-relaxed text-content">
+        <div className="rounded-card border border-border bg-surface px-4 py-3 font-mono italic text-[13px] leading-relaxed text-content shadow-card">
           {content}
         </div>
         {attachments && attachments.length > 0 && (
@@ -203,12 +260,12 @@ export function ChatMessage({
                   key={i}
                   src={a.dataUrl}
                   alt={a.name}
-                  className="max-h-32 rounded-[3px] border border-border object-contain"
+                  className="max-h-32 rounded-control border border-border object-contain"
                 />
               ) : (
                 <span
                   key={i}
-                  className="mono flex items-center gap-1 rounded-[3px] border border-border bg-surface px-2 py-0.5 text-[11px] text-content-muted"
+                  className="mono flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-content-muted"
                 >
                   <Paperclip size={11} /> {a.name} ({a.charCount.toLocaleString()}c)
                 </span>
@@ -216,11 +273,18 @@ export function ChatMessage({
             )}
           </div>
         )}
-        {onEdit && (
-          <div className="absolute -right-1 top-0 opacity-0 transition-opacity group-hover:opacity-100">
-            <IconButton variant="ghost" size="sm" label="Edit message" onClick={startEdit}>
-              <Pencil size={12} />
-            </IconButton>
+        {(onEdit || (canRegenerate && onRegenerate)) && (
+          <div className="absolute -right-1 top-0 flex items-center gap-1">
+            {canRegenerate && onRegenerate && (
+              <IconButton variant="ghost" size="sm" label="Regenerate reply" onClick={onRegenerate}>
+                <RefreshCw size={12} />
+              </IconButton>
+            )}
+            {onEdit && (
+              <IconButton variant="ghost" size="sm" label="Edit message" onClick={startEdit}>
+                <Pencil size={12} />
+              </IconButton>
+            )}
           </div>
         )}
       </motion.div>
@@ -233,28 +297,33 @@ export function ChatMessage({
         {status && (
           <div className="mono mb-2 flex items-center gap-1.5 text-[11px] text-content-faint">
             <span className="h-1.5 w-1.5 rounded-full bg-rule animate-pulse" />
-            {STATUS_LABELS[status] ?? status}
+            {statusLabel ?? STATUS_LABELS[status] ?? status}
           </div>
         )}
         {reasoning && (
-          <details className="mb-3 rounded-[3px] border border-border bg-surface-2/50 px-3 py-2">
+          <details className="mb-3 rounded-card border border-border bg-surface-2/50 px-3.5 py-2.5 shadow-sm">
             <summary className="mono text-[11px] text-content-faint">thinking</summary>
             <Markdown content={reasoning} className="prose-chat mt-2 text-[13px] text-content-muted" />
           </details>
         )}
-        <Markdown
-          content={content}
-          className="prose-chat text-ink"
-          streaming={streaming}
-          conversationTitle={conversationTitle}
-          conversationId={conversationId}
-        />
+        <OverlaySourceMarkers anchors={overlayAnchors} onOpen={onOpenOverlay ?? (() => {})}>
+          <div data-selectable-answer={role === "assistant" && !streaming && !ephemeral ? id : undefined}>
+            <Markdown
+              content={content}
+              className="prose-chat text-ink"
+              streaming={streaming}
+              conversationTitle={conversationTitle}
+              conversationId={conversationId}
+              ephemeral={ephemeral}
+            />
+          </div>
+        </OverlaySourceMarkers>
         {streaming && (
           <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
         )}
         {!streaming && (
           <>
-            <div className="absolute right-0 top-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <div className={`absolute right-0 ${overlayAnchors.length ? "top-8" : "top-0"} flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100`}>
               <IconButton variant="ghost" size="sm" label={copied ? "Copied" : "Copy document"} onClick={copy}>
                 {copied ? <Check size={13} /> : <Copy size={13} />}
               </IconButton>
@@ -264,18 +333,35 @@ export function ChatMessage({
                 </IconButton>
               )}
             </div>
-            {id && (
-              <div className="mono mt-5 flex items-center gap-3 text-[12px] tracking-wide">
-                <Button asChild variant="primary" size="sm">
-                  <a href={`/print/${id}`} target="_blank" rel="noopener noreferrer">
-                    <Download size={14} />
-                    download PDF
-                  </a>
+            {id && !ephemeral && (
+              <div className="mono mt-5 flex flex-wrap items-center gap-3 text-[12px] tracking-wide">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={downloadPdf}
+                  disabled={pdfState === "rendering"}
+                >
+                  <Download size={14} />
+                  {pdfState === "rendering" ? "rendering PDF…" : pdfState === "done" ? "downloaded" : pdfState === "error" ? "failed — retry" : "download PDF"}
                 </Button>
-                <span className="text-content-faint">opens a clean page, then click save as PDF</span>
+                <a
+                  href={`/print/${id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-content-faint transition-colors hover:text-ink"
+                >
+                  open preview
+                </a>
               </div>
             )}
             <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />
+            <AnswerInsights activities={activities} grounding={grounding} />
+            {deliveryState === "interrupted" && interruptedReplyLabel(content) && (
+              <div className="mono mt-4 flex items-center gap-2 text-[11px] text-content-faint">
+                <span>{interruptedReplyLabel(content)}</span>
+                {canRegenerate && onRegenerate && <Button variant="ghost" size="sm" onClick={onRegenerate}>retry</Button>}
+              </div>
+            )}
           </>
         )}
       </motion.div>
@@ -287,28 +373,33 @@ export function ChatMessage({
       {status && (
         <div className="mono mb-2 flex items-center gap-1.5 text-[11px] text-content-faint">
           <span className="h-1.5 w-1.5 rounded-full bg-rule animate-pulse" />
-          {STATUS_LABELS[status] ?? status}
+          {statusLabel ?? STATUS_LABELS[status] ?? status}
         </div>
       )}
       {reasoning && (
-        <details className="mb-3 rounded-[3px] border border-border bg-surface-2/50 px-3 py-2">
+        <details className="mb-3 rounded-card border border-border bg-surface-2/50 px-3.5 py-2.5 shadow-sm">
           <summary className="mono text-[11px] text-content-faint">thinking</summary>
           <Markdown content={reasoning} className="prose-chat mt-2 text-[13px] text-content-muted" />
         </details>
       )}
-      <Markdown
-        content={content}
-        className="prose-chat text-ink"
-        streaming={streaming}
-        conversationTitle={conversationTitle}
-        conversationId={conversationId}
-      />
+      <OverlaySourceMarkers anchors={overlayAnchors} onOpen={onOpenOverlay ?? (() => {})}>
+        <div data-selectable-answer={role === "assistant" && !streaming && !ephemeral ? id : undefined}>
+          <Markdown
+            content={content}
+            className="prose-chat text-ink"
+            streaming={streaming}
+            conversationTitle={conversationTitle}
+            conversationId={conversationId}
+            ephemeral={ephemeral}
+          />
+        </div>
+      </OverlaySourceMarkers>
       {streaming && (
         <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-rule" />
       )}
       {!streaming && (
         <>
-          <div className="absolute right-0 top-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className={`absolute right-0 ${overlayAnchors.length ? "top-8" : "top-0"} flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100`}>
             <IconButton variant="ghost" size="sm" label={copied ? "Copied" : "Copy message"} onClick={copy}>
               {copied ? <Check size={13} /> : <Copy size={13} />}
             </IconButton>
@@ -319,6 +410,13 @@ export function ChatMessage({
             )}
           </div>
           <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />
+          <AnswerInsights activities={activities} grounding={grounding} />
+          {deliveryState === "interrupted" && interruptedReplyLabel(content) && (
+            <div className="mono mt-4 flex items-center gap-2 text-[11px] text-content-faint">
+              <span>{interruptedReplyLabel(content)}</span>
+              {canRegenerate && onRegenerate && <Button variant="ghost" size="sm" onClick={onRegenerate}>retry</Button>}
+            </div>
+          )}
         </>
       )}
     </motion.div>

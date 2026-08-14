@@ -33,6 +33,33 @@ export default function PrintPage() {
       .catch(() => setErr("Document not found."));
   }, [params.id]);
 
+  // Signal readiness for the headless-Chromium PDF route (/api/messages/[id]/pdf):
+  // the PDF route waits on html[data-print-ready="1"] instead of guessing when
+  // the page is settled, so the rendered PDF matches what's on screen. We
+  // first drain any in-flight async renders (mermaid diagrams increment a
+  // global __pendingRenders counter while rendering — see MermaidDiagram),
+  // capped at 5s so a hung render can't stall the PDF forever, then mark
+  // ready. Inert for human visitors.
+  useEffect(() => {
+    if (!doc) return;
+    let cancelled = false;
+    const global = globalThis as unknown as { __pendingRenders?: number };
+    const start = Date.now();
+    const tick = () => {
+      if (cancelled) return;
+      if ((global.__pendingRenders ?? 0) > 0 && Date.now() - start < 5000) {
+        setTimeout(tick, 50);
+        return;
+      }
+      document.documentElement.dataset.printReady = "1";
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      delete document.documentElement.dataset.printReady;
+    };
+  }, [doc]);
+
   if (err) return <div className="mono p-8 text-sm text-danger">{err}</div>;
   if (!doc) {
     return (
