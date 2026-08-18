@@ -39,11 +39,59 @@ test("indexes document, Mermaid, native, and legacy artifacts from assistant mes
     ["visualization", "native-message", "Read/write conflicts"],
   ]);
   assert.deepEqual(context.artifacts.at(-1), {
-    id: "native-message:visualization",
+    id: "native-message:artifact:0",
     messageId: "native-message",
     kind: "visualization",
     label: "Read/write conflicts",
   });
+});
+
+test("assigns stable positional ids to multiple native artifact fences in one message", () => {
+  const callout = JSON.stringify({
+    schema: "studygpt.artifact",
+    version: 1,
+    kind: "callout",
+    data: { body: "Remember this" },
+  });
+  const table = JSON.stringify({
+    schema: "studygpt.artifact",
+    version: 1,
+    kind: "table",
+    title: "Rules",
+    data: { columns: ["Rule"], rows: [["Push σ down"]] },
+  });
+  const context = buildConversationContext([
+    {
+      id: "m1",
+      role: "assistant",
+      kind: "chat",
+      content: "```artifact\n" + callout + "\n```\n```artifact\n" + table + "\n```",
+    },
+  ]);
+
+  assert.deepEqual(
+    context.artifacts.map((item) => item.id),
+    ["m1:artifact:0", "m1:artifact:1"],
+  );
+  assert.deepEqual(
+    context.artifacts.map((item) => [item.kind, item.label]),
+    [
+      ["visualization", "Callout"],
+      ["visualization", "Rules"],
+    ],
+  );
+});
+
+test("emits no native artifact entry for an all-invalid or all-legacy message", () => {
+  const context = buildConversationContext([
+    { id: "bad", role: "assistant", kind: "chat", content: "```artifact\n{invalid\n```" },
+    { id: "legacy", role: "assistant", kind: "chat", content: "```artifact-html\n<div>x</div>\n```" },
+  ]);
+
+  assert.deepEqual(
+    context.artifacts.map((item) => [item.id, item.kind]),
+    [["legacy:visualization", "visualization"]],
+  );
 });
 
 test("keeps native artifact instructions out of document prompts", () => {

@@ -128,3 +128,20 @@ export function systemPromptFor(mode: ConversationMode): string {
 export function documentSystemPrompt(): string {
   return DOCUMENT_SYSTEM_PROMPT + MATH_FORMATTING_RULES + MERMAID_RULES + WEB_SEARCH_RULES;
 }
+
+// System prompt for a one-shot native-artifact transform (study-workflow-
+// upgrades Task 5). Unlike systemPromptFor(), it carries NO math/mermaid/
+// flashcard/web rules: the model's ONLY job is to return a single transformed
+// `artifact` JSON envelope. It is given the canonical current artifact, the
+// user's edit instruction, and (optionally) relevant project retrieval context
+// to keep the transformed artifact grounded in the course materials. The route
+// requires exactly one ```artifact fence and validates it through
+// classifyArtifact before persisting — so a malformed or legacy-HTML response
+// is rejected and the current version stays active.
+export const ARTIFACT_TRANSFORM_PROMPT = `
+You transform an existing StudyGPT native artifact according to the user's instruction.
+- Return ONLY a single fenced \`artifact\` block containing JSON. No prose, no other fences.
+- The JSON MUST keep the discriminator \`"schema":"studygpt.artifact"\` and \`"version":1\`, and keep the same \`kind\` unless the instruction explicitly asks to change it.
+- Preserve the artifact's meaning and grounding; apply only the requested edit (simplify, add an example, turn into flashcards, rephrase, etc.).
+- Never emit HTML, scripts, SVG, URLs, or base64. Stay within the supported kinds: diagram, table, comparison, steps, callout, chart.
+- If relevant project context is provided, keep the transformed artifact consistent with it.`;

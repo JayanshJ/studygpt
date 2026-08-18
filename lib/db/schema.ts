@@ -6,6 +6,7 @@
 // so it's idempotent and safe to extend.
 
 import type { Band } from "@/lib/mastery/model";
+import type { NativeArtifact } from "@/lib/artifacts/schema";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS conversations (
@@ -296,6 +297,32 @@ export const SCHEMA_SQL = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_overlay_messages_thread
      ON overlay_messages(overlay_id, created_at)`,
+  // --- Native artifact version history (study-workflow-upgrades Task 5) ---
+  // Stored SEPARATELY from the immutable assistant message: a version only
+  // overrides the renderer for the matching fence. The artifact_id is the
+  // stable entry id (`${messageId}:artifact:${ordinal}`) from
+  // lib/artifacts/entries.ts, so a version row is keyed by the exact fence it
+  // overrides. Only ONE version per artifact_id is active at a time (the
+  // application layer enforces this in a transaction on every write/activate);
+  // the `active` column is denormalized for a fast active-version lookup.
+  // payload is a validated canonical NativeArtifact (JSON). created_at orders
+  // the bounded history (newest first); the store trims to the newest 20 per
+  // artifact after a successful write.
+  `CREATE TABLE IF NOT EXISTS artifact_versions (
+    id TEXT PRIMARY KEY,
+    artifact_id TEXT NOT NULL,
+    parent_version_id TEXT,
+    source_message_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    instruction TEXT,
+    active INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (parent_version_id) REFERENCES artifact_versions(id) ON DELETE SET NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_versions_artifact
+     ON artifact_versions(artifact_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_versions_active
+     ON artifact_versions(artifact_id) WHERE active = 1`,
 ] as const;
 
 export type ConversationMode = "chat" | "feynman";
@@ -533,6 +560,29 @@ export interface MaterialExtraction {
   error: string | null;
   extracted_at: number | null;
 }
+
+// A persisted native-artifact version (study-workflow-upgrades Task 5).
+// `payload` is a validated canonical NativeArtifact. Stored separately from
+// the immutable assistant message; only the active version for an artifact_id
+// overrides the renderer for the matching fence. See lib/db/artifact-versions.
+export interface ArtifactVersion {
+  id: string;
+  artifact_id: string;
+  parent_version_id: string | null;
+  source_message_id: string;
+  payload: NativeArtifact;
+  instruction: string | null;
+  active: boolean;
+  created_at: number;
+}
+
+export type CreateArtifactVersionInput = {
+  artifactId: string;
+  parentVersionId: string | null;
+  sourceMessageId: string;
+  payload: NativeArtifact;
+  instruction: string | null;
+};
 
 // A single attachment on a user message. Stored as JSON in messages.attachments.
 // Images are kept as data URLs and, for the parsing layer, carry their OCR'd

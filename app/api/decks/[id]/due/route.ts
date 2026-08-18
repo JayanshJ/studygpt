@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDeck, dueCardsInDeck, newIntroducedToday } from "@/lib/db";
 import { cardMastery } from "@/lib/db/mastery";
+import { withRouteHandler } from "@/lib/server/withRouteHandler";
 
 // GET /api/decks/[id]/due — per-deck session queue: due cards (by due asc) +
 // new cards (by ordinal) up to the remaining daily cap.
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
+export const GET = withRouteHandler<{ id: string }>(async ({ params }) => {
+  const { id } = params;
   const deck = getDeck(id);
   if (!deck) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const now = Date.now();
@@ -19,4 +17,4 @@ export async function GET(
     return { ...c, mastery: m?.mastery ?? null, band: m?.band };
   });
   return NextResponse.json({ cards: cardsWithMastery, dailyCap: deck.daily_new_limit, newIntroducedToday: introduced });
-}
+});

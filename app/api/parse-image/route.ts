@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createWorker, type Worker } from "tesseract.js";
+import { withRouteHandlerNoParams } from "@/lib/server/withRouteHandler";
 
 // POST /api/parse-image — multipart { file }. OCRs an image to text via
 // tesseract.js so non-vision chat models can still ingest images (the parsing
@@ -13,6 +14,10 @@ import { createWorker, type Worker } from "tesseract.js";
 // load was the dominant cost. Recognition still takes time on large images,
 // so the client also downscales to ~1600px before uploading. A single shared
 // worker serializes concurrent OCRs; fine for a single-user local app.
+//
+// Multipart route: body is form-data, not JSON, so validateBody does not
+// apply. The existing formData parsing + content-type/size guards are kept
+// as-is; this wrapper only adds the error boundary (catch + sanitized 500).
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB cap, same as /api/extract
 
 const globalForOcr = globalThis as unknown as { __ocrWorker?: Promise<Worker> };
@@ -26,7 +31,7 @@ function getWorker(): Promise<Worker> {
   return globalForOcr.__ocrWorker;
 }
 
-export async function POST(req: Request) {
+export const POST = withRouteHandlerNoParams(async ({ request: req }) => {
   const contentType = req.headers.get("content-type") || "";
   if (!contentType.includes("multipart/form-data")) {
     return NextResponse.json({ error: "Expected multipart/form-data" }, { status: 400 });
@@ -58,4 +63,4 @@ export async function POST(req: Request) {
       warning: err instanceof Error ? err.message : "OCR failed",
     });
   }
-}
+});

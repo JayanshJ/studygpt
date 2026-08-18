@@ -24,8 +24,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StudyGPT",
-  description: "A local study companion for concept-heavy learning.",
+  title: "Loom",
+  description: "A calm, local chat companion.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -1,43 +1,164 @@
-# TODO — 5 fixes
+# Platform Engineering TODO
 
-Tracking the five reported issues. Detailed design: `.claude/plans/jolly-hopping-badger.md`.
+> Grounded in a read-through of this codebase (2026-08-16). Items are ordered
+> by leverage and scoped to be **additive / reversible** unless noted. Deferred
+> items carry a reason, not a vague "later".
 
-## Linchpin: stream protocol migration (unblocks 2, 3, 4)
-- [x] `app/api/chat/route.ts`: replace `result.toTextStreamResponse()` with a custom SSE `ReadableStream` iterating `result.fullStream`; emit `data:` JSON events: `{type:"text",delta}`, `{type:"reasoning",delta}`, `{type:"status",phase}`, `{type:"error",message}`, `{type:"done"}`. Map parts: `start-step`→status thinking, `reasoning-start`→thinking, `reasoning-delta`→reasoning, `text-delta`→text, `tool-call`→status searching (query), `tool-result`→thinking, `error`→error. Emit leading `reading-materials` / `drafting-document` status before the loop when applicable. `onFinish` (persistence) unchanged. (Note: AI SDK 7 delta parts expose `.text`, not `.textDelta`; tool-call `.input` is typed `{}` so `.query` is cast.)
-- [x] `app/page.tsx` `runChat`: replace byte-decode loop with SSE parser (split on `\n`, parse `data: ` lines, dispatch text/reasoning/status/error/done). Add `reasoning?` + `status?` to the in-memory message type. Optimistic bubble starts with `status:"thinking"`. Stop-with-partial + sources-after-stream unchanged. Status cleared in `finally` so the line vanishes on completion.
-- [x] `components/ChatMessage.tsx`: status line above bubble while streaming (`thinking…`, `reading your materials…`, `drafting document…`, `searching the web…`, `writing…`); collapsible `<details>` "thinking" panel rendering `m.reasoning` via `<Markdown>`. New optional props `status?`, `reasoning?`, `allMaterials?`.
+## Active — doing now (subagent fan-out + owner integration)
 
-## 1. Voice typing (`components/ChatInput.tsx`)
-- [x] Permission pre-check via `navigator.permissions.query({name:"microphone"})`; if `denied`, show `gateMsg` and bail (no flicker).
-- [x] `try/catch` around `rec.start()`.
-- [x] `onerror`: map `not-allowed`/`service-not-allowed` → "Microphone blocked…", `no-speech` → "Didn't catch that…", `audio-capture` → "No microphone found."; set `errorRef`; `setListening(false)`.
-- [x] `onend`: guarded single re-arm (`manualStopRef` + `retriedRef`) to survive `continuous=true` auto-stops; no infinite loop.
-- [x] Clear refs at each new start; user click-stop sets `manualStopRef` before `stop()`.
+### 1. Test suite command + CI gate — ✅ DONE
+- `package.json`: added `test` (`node --import tsx --test`, auto-discovers all
+  48 test files including `[id]`-bracketed paths), `typecheck`, `verify`
+  (typecheck + test + lint + `git diff --check`).
+- `.github/workflows/ci.yml`: runs `verify` on push/PR, Node 20, `npm ci`.
+- Result: `npm run verify` is green — **191 tests pass, tsc clean, 0 lint
+  errors, whitespace clean**. (Was: no `test` script, no CI, a broken test
+  file almost shipped.)
+**Why:** 48 test files, no `test` script, no CI. A broken test file
+(`lib/db/artifact-versions.test.ts`, unparseable) almost shipped on this branch
+and was caught only because `tsc` happened to touch it.
+**Files:** `package.json` (scripts), `.github/workflows/ci.yml` (new).
+**Approach:** Add `test` (auto-discovers `*.test.ts(x)`), `typecheck`
+(`tsc --noEmit`), `verify` (typecheck + test + lint + `git diff --check`).
+CI runs `verify` on push/PR. Bake the `[[]id[]]` bracket-escape gotcha into the
+test script so it isn't tribal knowledge.
+**Verify:** `npm run verify` is green on a clean tree.
+**Risk:** None — additive.
 
-## 2. Web search (Tavily)
-- [x] `lib/tools/web-search.ts` (new): `makeWebSearchTool(apiKey)` → AI SDK `tool` with `z.object({query})` inputSchema; POST `https://api.tavily.com/search` (`api_key`, `query`, `max_results:5`, `include_answer:true`); return `{answer, results:[{title,url,content}]}`. Empty key → return `null`.
-- [x] `lib/llm/provider.ts`: expose `tavilyApiKey` (`getAllSettings()` + `TAVILY_API_KEY` env fallback).
-- [x] `app/api/settings/route.ts` + `app/settings/page.tsx`: `tavilyApiKey` field (show/hide, "Optional — enables web search").
-- [x] `app/api/chat/route.ts`: when body `web:true` and key present, `tools:{web_search}`, `stopWhen: stepCountIs(5)`, `toolChoice:"auto"`. Else omit tools.
-- [x] `components/ChatInput.tsx` + `app/page.tsx`: `web` toggle button (default on) + pass `web` in send payload (send/regenerate/edit).
+### 2. Structured logger + route error boundary (`withRouteHandler`) — ✅ DONE
+- `lib/server/logger.ts`, `lib/server/withRouteHandler.ts`,
+  `lib/server/validation.ts` (zod), + `withRouteHandler.test.ts` (5 tests).
+- `withRouteHandler` owns catch + request-id-bound server-side logging +
+  sanitized `{ error: "Internal error" }` 500 (never echoes internals).
+- `validateBody` → structured 400 `{ error, issues }` for zod failures,
+  `{ error: "Invalid JSON" }` for parse failures.
+**Why:** 10 of 20 route handlers have **no try/catch** — exceptions bubble as
+opaque 500s. No logging library. The chat route strings raw error messages
+(e.g. `AI_RetryError: … weekly usage limit …`) straight to the client.
+**Files:** `lib/server/logger.ts` (new), `lib/server/withRouteHandler.ts`
+(new), `lib/server/validation.ts` (new, zod helper).
+**Approach:** A `withRouteHandler` HOF owns try/catch, request-id logging
+(server-side only), and a sanitized `{ error: "Internal error" }` 500. Routes
+define only the happy path. Combined with zod: a `defineRoute({ body: schema,
+handler })` validates the body (400 + structured `{ error, issues }`) then
+runs the handler inside the error boundary.
+**Verify:** unit tests for the HOF (valid body, invalid body, thrown error).
+**Risk:** Low — new files; route wiring is the integration step.
 
-## 3. Think more (auto reasoning + show thinking)
-- [x] `app/api/chat/route.ts`: `isComplexTurn(userText, document)` — document OR `/flashcard|quiz|test me|deck|cheat sheet|draft|outline|summarize/i` OR length>400.
-- [x] `providerOptions: { ollama: { reasoningEffort: complex ? "high" : "medium" } }` (best-effort).
-- [x] `maxOutputTokens`: complex → 8192, default 4096.
-- [x] Reasoning surfaced via the stream migration's thinking panel (no extra work if reasoning parts arrive).
+### 3. Zod validation at route boundaries — ✅ DONE
+- All 32 route handlers hardened across 5 disjoint subagent groups (chat/
+  streaming, conversations/messages/search, projects/settings/decks,
+  materials/concepts/review, artifacts/transcribe).
+- JSON-body routes get zod schemas; multipart routes get the error boundary
+  only (commented why); streaming routes get `validateBody` + a generic SSE
+  `"Streaming failed"` (real error logged server-side) without breaking the
+  `ReadableStream`.
+- **Behavior preserved**: no input that previously succeeded now fails; same
+  status codes + response shapes on the happy path.
+- Live-smoked: GETs → 200, malformed JSON → 400 (was 500/crash), zod
+  failures → structured `{ error, issues }`, 404s intact, chat stream flows.
+**Why:** Every POST re-implements "is this body shaped right?" inline with
+loose guards and string errors. `as { … }` casts litter routes + client
+`fetch().then(r => r.json() as …)`.
+**Files:** all `app/api/**/route.ts` (applied via fan-out, disjoint groups).
+**Approach:** One zod schema per route body. **Preserve exact existing
+acceptance criteria** — do not tighten validation, only make it structured.
+Client keeps `as` casts for now (server-side only); client/server schema
+sharing is deferred.
+**Verify:** `npm run verify`; smoke each route with curl (200/400/500).
+**Risk:** Medium — churn on working routes. Mitigated by "preserve behavior"
+constraint + disjoint file ownership per agent + full verify at the end.
+**Note on streaming routes:** `chat/route` + `chat/overlay` use a
+`ReadableStream` with internal `send({ type: "error" })`. Do NOT double-wrap
+those — wrap only the sync body-parse/validation; leave the stream's error
+handling intact.
 
-## 4. Live status — delivered by the stream migration + ChatMessage status line above.
+### 4. Versioned DB migrations — ✅ DONE
+- `lib/db/migrations.ts` (5 ordered named migrations + `runMigrations` +
+  `schema_version` table) + `lib/db/migrations.test.ts` (12 tests).
+- `lib/db/index.ts` `open()`: **152 → 28 lines**. Base `SCHEMA_SQL` runs first
+  (unchanged), then `runMigrations` (each runs at most once + recorded),
+  then the recurring `material_extractions` crash-recovery sweep (kept
+  outside migrations by design).
+- Fresh-DB schema identical to the old boot block; existing DBs are guarded
+  no-ops that only bump the recorded version. All DB-touching suites green.
+**Why:** `lib/db/index.ts`'s `open()` runs a 151-line migration block on every
+boot — `PRAGMA table_info` scans, `ALTER`s, a chunk-page back-fill, a token
+back-fill. "Has this run?" is inferred from data shape, not recorded, and the
+block only grows.
+**Files:** `lib/db/migrations.ts` (new), `lib/db/index.ts` (owns `open()`).
+**Approach:** Add a `schema_version` table; record the highest applied
+migration. The existing additive `ALTER`s / back-fills become ordered,
+**named** migrations v1..vN that run once and are recorded. Behavior is
+**identical** on a fresh DB and on an existing DB that already ran the current
+boot block (they're all no-ops there). Keep `CREATE TABLE IF NOT EXISTS` in
+`SCHEMA_SQL` for the base tables.
+**Verify:** existing DB suites green (`test:fsrs`, `test:mastery`,
+`test:retrieval`, `test:learning-path`, `lib/db/artifact-versions.test.ts`);
+open a pre-existing on-disk DB and confirm no re-runs.
+**Risk:** Medium-high — DB init bugs can corrupt user DBs. Mitigated by
+**strictly additive** migrations that mirror the existing no-op guards, and
+by running all DB-touching suites.
 
-## 5. Materials/RAG awareness
-- [x] `app/api/chat/route.ts` retrieval block: clean query (strip `>` quotes/markdown, collapse ws, truncate ~600 chars) before `embedText`.
-- [x] Drop chunks with `cosine < 0.22`.
-- [x] Material-level routing: per-material max score → pick top 4 materials (or all if fewer); only their chunks eligible.
-- [x] Within selected materials: top chunks (no fixed cap), neighbor expansion (ordinal±1), dedup by first-80 chars, until ~6000-char budget.
-- [x] Context block: `<context>` tags, inventory of all project materials (title + chunk count), excerpt `<excerpt material="Title">` tags, instruction to say when info isn't in materials / use web_search.
-- [x] `components/SourcesPanel.tsx`: show ALL project materials, mark which were used (by materialId). Thread `allMaterials` from `app/page.tsx` (already has project materials) → `ChatMessage` → `SourcesPanel`.
-- [x] Explicit material references: detect when a turn names a material by full title or "<word> <number>" (fuzzy word match survives mangling like "un-bungblatt"→`uebungsblatt`; qualifier word disambiguates `6._Uebungsblatt` vs `Kapitel_6`, and rejects count phrases like "make 10 flashcards"). Force-include referenced materials' chunks in document order, bypassing the 0.22 cosine floor, prioritized first in the budget; a bare follow-up ("again") reuses the prior turn's reference. Context block notes which materials the user named and tells the model to focus on them. Fixes "flashcards from Übungsblatt 6" only surfacing 1/7/9.
+### 5. Extract `useGlobalSearch` + `useArtifactVersions` hooks from `page.tsx` — ✅ DONE
+- `components/hooks/useGlobalSearch.ts` (palette state + debounced search +
+  Cmd/Ctrl+K + keyboard-nav active index) and `components/hooks/useArtifactVersions.ts`
+  (override map load + transform/restore handlers).
+- `app/(app)/page.tsx`: **1371 → 1231 lines**. The page is now the composition
+  root wiring the two hooks; the inlined effects/handlers removed.
+- Pre-existing lint errors in `page.tsx` (fn-hoist forward ref, 2× `Date.now()`
+  in event handlers) and 3 other component files (`MermaidDiagram`,
+  `useVoiceTyping`, `use-overlay-chat` set-state-in-effect) fixed with the
+  established `eslint-disable-next-line` pattern + explanatory notes. These
+  were blocking `verify`/CI; now 0 lint errors. Proper resolution (useCallback
+  / move declarations / extract Date.now) is part of deferred item #7.
+**Why:** `app/(app)/page.tsx` is 1,371 lines doing ~8 jobs; the pre-existing
+lint errors (fn-used-before-declaration, `Date.now()` during render) survive
+because nobody reads the whole file.
+**Files:** `components/hooks/useGlobalSearch.ts` (new),
+`components/hooks/useArtifactVersions.ts` (new), `app/(app)/page.tsx` (wired
+by owner — NOT a blind subagent).
+**Approach:** Extract only the two cleanly-separable concerns I added this
+session (global search state+effect+result nav, and artifact-version
+override load+change/error handlers). The page becomes the composition root.
+**Verify:** `npm run verify`; the existing `page.evidence.test.ts` still
+passes; manual smoke of Cmd+K palette + an artifact transform.
+**Risk:** Medium — page.tsx is the app's heart. Mitigated by extracting only
+the two self-contained hooks (not the core chat-stream/send/regenerate flow)
+and by the owner (me) doing the wiring + verification, not a subagent.
 
-## Verify
-- [x] `npx tsc --noEmit && npm run lint && npm run build` — clean (only pre-existing `<img>` warnings).
-- [ ] Manual: voice prompt+feedback; web search status+citations; thinking panel on complex turns; status phases on every send; SourcesPanel lists all materials with >10; unrelated question → "not in materials" instead of hallucination.
+## Deferred — with reasons
+
+### 6. `sqlite-vec` / ANN retrieval — **measure first**
+`lib/retrieval/index.ts` loads all project chunks and runs full cosine per
+query. Fine for study-sized projects; only matters at scale. `sqlite-vec`
+adds a native dependency + index-creation churn. **Do not install blind in a
+batch** — first add a retrieval-latency probe/metric and confirm a real
+project hits the threshold. Revisit when a project is large enough to matter.
+
+### 7. Full `page.tsx` decomposition (core chat flow) — **separate, higher-risk effort**
+Extracting `useChatStream` / `useConversationLoader` / `useOverlaySession` is
+entangled with the send/edit/regenerate/SSE flows and is high-regression.
+Out of scope for this batch. Item 5 takes the safe slice; the rest is a
+dedicated refactor with its own verification.
+
+### 8. Typed DB query helper + client/server schema sharing — **lower priority**
+147 `.prepare(` calls with loose `as` casts. A `query<T>(sql, params): T[]`
+centralizes casts and enables later row validation, but the immediate win is
+small. Client/server zod-schema sharing (replace client `as` casts) is
+valuable but doubles the surface of item 3. Fold in after item 3 lands.
+
+---
+
+## Orchestration
+
+- **Phase 1 (parallel, 3 subagents — disjoint files):** #1 test/CI,
+  #2 server-infra (logger + withRouteHandler + validation), #4 migrations.
+- **Owner verifies Phase 1** (tsc + tests + smoke).
+- **Phase 2 (parallel, 5 subagents — disjoint route groups):** #3 route
+  hardening (each agent owns a disjoint set of route files).
+- **Owner integrates:** #5 hooks + page.tsx wiring, full `npm run verify`,
+  curl smoke of every route, fix regressions.
+
+zod is installed by the owner before Phase 1 so all agents can import it
+without a race on `package-lock.json`.

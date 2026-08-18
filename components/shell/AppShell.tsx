@@ -14,7 +14,13 @@ import { SidebarSlotProvider } from "./sidebar-slot";
 // instead of a nav rail + a separate conversation pane.
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-[100dvh] w-full gap-0 overflow-hidden bg-paper-2 p-0 text-ink tab:p-3">
+    // Transparent outer shell: on macOS the Electron window uses vibrancy
+    // (under-window material), so the sidebar — whose own background is
+    // transparent/rgba — shows the blurred desktop wallpaper through it, like
+    // ChatGPT/Claude's native Mac apps. The content panel stays opaque. No
+    // outer padding or nested rounded cards: native Mac apps have the sidebar
+    // flush to the window edge, the content panel flush beside it.
+    <div className="flex h-[100dvh] w-full gap-0 overflow-hidden bg-transparent text-ink">
       <SidebarSlotProvider>
         <TooltipProvider delayDuration={200} skipDelayDuration={300}>
           <Sidebar />
@@ -23,8 +29,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               the chat transcript) grow the column past 100vh so the page's own
               overflow-y-auto never engages and the outer overflow-hidden clips
               the spill — the page reads as "unscrollable". min-h-0 makes the
-              100vh stretch a hard bound so the page scrolls internally. */}
-          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper tab:ml-3 tab:rounded-panel tab:shadow-card">{children}</div>
+              100vh stretch a hard bound so the page scrolls internally.
+              bg-paper is the opaque content surface; the left border separates
+              it from the translucent vibrancy sidebar. No rounding/shadow — it's
+              a flush native pane, not a floating card. */}
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-line bg-paper">{children}</div>
           <BottomTabBar />
           <Toaster />
         </TooltipProvider>

@@ -60,6 +60,7 @@ export function MermaidGraphic({ code }: { code: string }) {
     let cancelled = false;
     let settled = false;
     incPending();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFailed(false);
     mermaid
       .render(id, code)

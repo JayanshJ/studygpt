@@ -17,6 +17,7 @@ export function ChatOverlay({
   web,
   allMaterials,
   transcriptionAvailable,
+  initialPrompt,
   onClose,
 }: {
   thread: OverlayThread;
@@ -24,6 +25,7 @@ export function ChatOverlay({
   web: boolean;
   allMaterials?: { id: string; title: string }[];
   transcriptionAvailable?: boolean;
+  initialPrompt?: string;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -32,6 +34,20 @@ export function ChatOverlay({
   const voice = useVoiceTyping({ value: draft, onValueChange: setDraft, transcriptionAvailable });
   const narrow = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
   const reduceMotion = useReducedMotion();
+
+  // Send the action's prompt as the FIRST overlay turn, exactly once. Only
+  // fires when an initialPrompt is supplied AND there are no existing turns
+  // (a freshly opened overlay from a study action). A reopened stored overlay
+  // already has messages, so this never re-fires. The ref guards against
+  // re-render re-sends.
+  const sentInitialPromptRef = useRef(false);
+  useEffect(() => {
+    if (sentInitialPromptRef.current) return;
+    if (!initialPrompt || !initialPrompt.trim()) return;
+    if (turns.length > 0) return;
+    sentInitialPromptRef.current = true;
+    void send(initialPrompt);
+  }, [initialPrompt, turns.length, send]);
 
   useEffect(() => {
     inputRef.current?.focus();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { extractPdf } from "@/lib/ingest";
+import { withRouteHandlerNoParams } from "@/lib/server/withRouteHandler";
 
 // Text-like extensions we will inline into a chat message. Anything else is
 // rejected so the picker/server stay in sync (the client picker uses the same
@@ -25,7 +26,13 @@ function extOf(name: string): string {
 // POST /api/extract — multipart { file }. Extracts text from a single text-like
 // file so the client can inline it into the next chat message. PDFs use the
 // same unpdf path as materials ingestion; everything else is decoded as UTF-8.
-export async function POST(req: Request) {
+//
+// Multipart route: body is form-data, not JSON, so validateBody does not apply.
+// The existing formData parsing + size/extension guards below are kept as-is;
+// this wrapper only adds the error boundary (catch + sanitized 500). Note the
+// inner try/catch for the extraction itself is preserved (returns a 502, not a
+// 500) — it's an intentional domain error, not an unhandled throw.
+export const POST = withRouteHandlerNoParams(async ({ request: req }) => {
   const contentType = req.headers.get("content-type") || "";
   if (!contentType.includes("multipart/form-data")) {
     return NextResponse.json({ error: "Expected multipart/form-data" }, { status: 400 });
@@ -70,4 +77,4 @@ export async function POST(req: Request) {
       { status: 502 },
     );
   }
-}
+});

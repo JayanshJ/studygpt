@@ -2,10 +2,10 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { SCHEMA_SQL, type Conversation, type Message, type ConversationMode, type MessageKind, type MessageDeliveryState, type Attachment } from "./schema";
-import { estimateTokens } from "@/lib/tokens";
-import { chunkText } from "@/lib/ingest/chunk";
+import { runMigrations } from "./migrations";
 import { prefixThroughAssistantMessage } from "@/lib/chat/message-prefix";
 import { rankConversationSearch, type ConversationSearchResult } from "@/lib/chat/conversation-search";
+import { rankGlobalSearch, type GlobalSearchResult } from "@/lib/chat/global-search";
 
 // Keep one connection across hot-reloads in dev so we don't lock the file.
 const globalForDb = globalThis as unknown as { __studygptDb?: Database.Database };
@@ -21,144 +21,20 @@ function open(): Database.Database {
   const db = new Database(dbPath);
   if (!inMemory) db.pragma("journal_mode = WAL"); // WAL requires a file-backed db
   db.pragma("foreign_keys = ON");
+  // Base tables — idempotent CREATE TABLE IF NOT EXISTS (lib/db/schema.ts).
   for (const stmt of SCHEMA_SQL) db.exec(stmt);
-  // Additive migration: add conversations.project_id if missing (existing DBs).
-  const cols = db.prepare("PRAGMA table_info(conversations)").all() as { name: string }[];
-  if (!cols.some((c) => c.name === "project_id")) {
-    db.exec("ALTER TABLE conversations ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL");
-  }
-  // Additive migration: add messages.attachments if missing (existing DBs).
-  // Stores a JSON array of Attachment (image data URLs / inlined file text).
-  const msgCols = db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
-  if (!msgCols.some((c) => c.name === "attachments")) {
-    db.exec("ALTER TABLE messages ADD COLUMN attachments TEXT");
-  }
-  // Additive migration: add messages.tokens (rough token estimate) so the
-  // Settings page can show a global token count as a single SUM.
-  if (!msgCols.some((c) => c.name === "tokens")) {
-    db.exec("ALTER TABLE messages ADD COLUMN tokens INTEGER");
-  }
-  // Additive migration: add messages.kind so a one-shot authored document
-  // (the "Document" send action) is tagged 'document' and rendered as a
-  // document card + print action, vs. a normal 'chat' reply. Existing rows
-  // get 'chat' from the column default — no backfill needed.
-  if (!msgCols.some((c) => c.name === "kind")) {
-    db.exec("ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'");
-  }
-  if (!msgCols.some((c) => c.name === "delivery_state")) {
-    db.exec("ALTER TABLE messages ADD COLUMN delivery_state TEXT NOT NULL DEFAULT 'complete'");
-  }
-  // Additive migration: early overlay-thread builds keyed a saved discussion
-  // only by its text, which cannot distinguish the same formula/phrase shown
-  // twice in one answer. Rebuild that small child table with text_offset in
-  // its unique key; saved overlay messages keep their thread ids unchanged.
-  const overlayThreadCols = db.prepare("PRAGMA table_info(overlay_threads)").all() as { name: string }[];
-  if (!overlayThreadCols.some((c) => c.name === "text_offset")) {
-    db.pragma("foreign_keys = OFF");
-    try {
-      db.transaction(() => {
-        db.exec(`CREATE TABLE overlay_threads_next (
-          id TEXT PRIMARY KEY,
-          conversation_id TEXT NOT NULL,
-          source_message_id TEXT NOT NULL,
-          selected_text TEXT NOT NULL,
-          text_offset INTEGER NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
-          FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE CASCADE,
-          UNIQUE(conversation_id, source_message_id, selected_text, text_offset)
-        )`);
-        db.exec(`INSERT INTO overlay_threads_next
-          (id, conversation_id, source_message_id, selected_text, text_offset, created_at, updated_at)
-          SELECT id, conversation_id, source_message_id, selected_text, 0, created_at, updated_at
-          FROM overlay_threads`);
-        db.exec("DROP TABLE overlay_threads");
-        db.exec("ALTER TABLE overlay_threads_next RENAME TO overlay_threads");
-        db.exec("CREATE INDEX idx_overlay_threads_conversation ON overlay_threads(conversation_id, source_message_id, updated_at DESC)");
-      })();
-    } finally {
-      db.pragma("foreign_keys = ON");
-    }
-  }
-  // Additive migration (SP3): per-deck daily new-card cap. Existing decks get
-  // the column default 20 — no backfill needed.
-  const deckCols = db.prepare("PRAGMA table_info(decks)").all() as { name: string }[];
-  if (!deckCols.some((c) => c.name === "daily_new_limit")) {
-    db.exec("ALTER TABLE decks ADD COLUMN daily_new_limit INTEGER NOT NULL DEFAULT 20");
-  }
-  // Additive migration: chunks.page — the 1-indexed PDF page a chunk came
-  // from (null for URL materials with no pages). Chunks already split on form
-  // feeds (page breaks) and never span pages, so chunk↔page is 1:1 by
-  // construction; this just records it. Used by the diagram vision pipeline to
-  // load the slide page images that correspond to retrieved chunks. Existing
-  // rows get NULL — they keep working as text-only retrieval.
-  const chunkCols = db.prepare("PRAGMA table_info(chunks)").all() as { name: string }[];
-  if (!chunkCols.some((c) => c.name === "page")) {
-    db.exec("ALTER TABLE chunks ADD COLUMN page INTEGER");
-  }
-  // One-time back-fill: chunks ingested before the page column existed (or
-  // before extractPdf preserved form-feed page breaks) have page = NULL, so the
-  // diagram notation pipeline can't map a retrieved chunk to its slide page.
-  // Re-derive page numbers from materials.text by re-running the deterministic
-  // chunker (chunkText) and assigning page by ORDINAL — exact when the text has
-  // form-feed page breaks AND the fresh chunk count matches the existing count.
-  // Materials whose text has NO form feed (ingested with the old mergePages:true
-  // extraction, which joined pages with "\n" and lost the boundaries) cannot be
-  // recovered from text alone — they're skipped here and fixed by the
-  // heal-on-reupload path (which re-extracts per page from the PDF). No PDF
-  // bytes, no re-ingest, no embedding regen: chunks/concept graph untouched.
-  try {
-    const nullPageMaterials = db
-      .prepare("SELECT DISTINCT material_id AS mid FROM chunks WHERE page IS NULL")
-      .all() as { mid: string }[];
-    if (nullPageMaterials.length > 0) {
-      const getMaterialRow = db.prepare("SELECT text FROM materials WHERE id = ? AND source_type = 'pdf'");
-      const listChunks = db.prepare("SELECT id, ordinal FROM chunks WHERE material_id = ? ORDER BY ordinal ASC");
-      const setPage = db.prepare("UPDATE chunks SET page = ? WHERE id = ?");
-      for (const { mid } of nullPageMaterials) {
-        const mat = getMaterialRow.get(mid) as { text: string } | undefined;
-        if (!mat || !mat.text || !mat.text.includes("\f")) continue; // no page boundaries → can't recover from text
-        const fresh = chunkText(mat.text);
-        const existing = listChunks.all(mid) as { id: string; ordinal: number }[];
-        if (fresh.length === 0 || fresh.length !== existing.length) continue; // count mismatch → skip, leave null
-        for (let i = 0; i < existing.length; i++) {
-          setPage.run(fresh[i].page, existing[i].id);
-        }
-      }
-    }
-  } catch {
-    // Best-effort migration: never block db open on a back-fill failure.
-  }
-  // One-time backfill: estimate tokens for rows that predate the column.
-  const tokenless = db
-    .prepare("SELECT id, content, attachments FROM messages WHERE tokens IS NULL")
-    .all() as { id: string; content: string; attachments: string | null }[];
-  if (tokenless.length > 0) {
-    const upd = db.prepare("UPDATE messages SET tokens = ? WHERE id = ?");
-    for (const r of tokenless) {
-      let extra = "";
-      if (r.attachments) {
-        try {
-          const a = JSON.parse(r.attachments);
-          if (Array.isArray(a)) {
-            for (const x of a) {
-              const t = x?.text;
-              if (typeof t === "string") extra += `\n${t}`;
-            }
-          }
-        } catch {
-          // ignore malformed attachments
-        }
-      }
-      upd.run(estimateTokens(r.content + extra), r.id);
-    }
-  }
-  // Crash recovery: a build that died mid-extraction leaves its materials in
-  // status='extracting'. At startup no build is running, so any 'extracting'
-  // row is stale — reset it to 'pending' so the chip doesn't show a phantom
-  // "extracting…" forever. The next build re-extracts (only status='ready' is
-  // skipped) and overwrites it.
+  // Versioned additive migrations + back-fills. Each runs at most once per DB
+  // and is recorded in schema_version; on a fresh DB this reproduces the same
+  // final schema + back-fills the old boot block produced, and on an existing
+  // DB every migration is a guarded no-op that only bumps the recorded version.
+  // See lib/db/migrations.ts for the behavior contract.
+  runMigrations(db);
+  // Crash recovery (recurring — NOT a migration): a build that died
+  // mid-extraction leaves its materials in status='extracting'. At startup no
+  // build is running, so any 'extracting' row is stale — reset it to 'pending'
+  // so the chip doesn't show a phantom "extracting…" forever. The next build
+  // re-extracts (only status='ready' is skipped) and overwrites it. This must
+  // run every boot (not once), so it stays here, outside runMigrations.
   db.prepare("UPDATE material_extractions SET status='pending' WHERE status='extracting'").run();
   return db;
 }
@@ -194,6 +70,70 @@ export function searchConversationHistory(query: string): ConversationSearchResu
     })),
     term,
   ).slice(0, 20);
+}
+
+export function searchGlobalHistory(query: string, activeProjectId: string | null): GlobalSearchResult[] {
+  const term = query.trim();
+  if (!term) return [];
+  const conversations = db.prepare("SELECT id, title, project_id FROM conversations ORDER BY created_at DESC").all() as {
+    id: string;
+    title: string;
+    project_id: string | null;
+  }[];
+  const messages = db.prepare(
+    "SELECT id, conversation_id, role, content, kind FROM messages WHERE role IN ('user', 'assistant') ORDER BY created_at DESC, rowid DESC",
+  ).all() as { id: string; conversation_id: string; role: "user" | "assistant"; content: string; kind: MessageKind }[];
+  const materials = db.prepare("SELECT id, project_id, title, text FROM materials ORDER BY created_at DESC").all() as {
+    id: string;
+    project_id: string;
+    title: string;
+    text: string;
+  }[];
+  const concepts = db.prepare("SELECT id, project_id, label, description FROM concepts ORDER BY label ASC").all() as {
+    id: string;
+    project_id: string;
+    label: string;
+    description: string | null;
+  }[];
+  const overlays = db.prepare("SELECT id, conversation_id, selected_text FROM overlay_threads ORDER BY updated_at DESC, rowid DESC").all() as {
+    id: string;
+    conversation_id: string;
+    selected_text: string;
+  }[];
+
+  return rankGlobalSearch({
+    query: term,
+    activeProjectId,
+    conversations: conversations.map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title,
+      projectId: conversation.project_id,
+    })),
+    messages: messages.map((message) => ({
+      id: message.id,
+      conversationId: message.conversation_id,
+      role: message.role,
+      content: message.content,
+      kind: message.kind,
+    })),
+    materials: materials.map((material) => ({
+      id: material.id,
+      projectId: material.project_id,
+      title: material.title,
+      text: material.text,
+    })),
+    concepts: concepts.map((concept) => ({
+      id: concept.id,
+      projectId: concept.project_id,
+      label: concept.label,
+      description: concept.description,
+    })),
+    overlays: overlays.map((overlay) => ({
+      id: overlay.id,
+      conversationId: overlay.conversation_id,
+      selectedText: overlay.selected_text,
+    })),
+  });
 }
 
 export function getConversation(id: string): Conversation | undefined {
@@ -442,4 +382,5 @@ export * from "./notation";
 export * from "./overlays";
 export * from "./insights";
 export * from "./project-memory";
-export type { Project, ProjectMemoryEntry, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment, Message, MessageKind, MessageDeliveryState, MessageActivity, MessageGrounding, Deck, Card, CardScheduling, ReviewLog, Concept, ConceptEdge, ConceptSource, CardConcept, MaterialExtraction, MaterialExtractionStatus, EdgeConfidence, ConceptRelation, OverlayThread, OverlayMessage } from "./schema";
+export * from "./artifact-versions";
+export type { Project, ProjectMemoryEntry, Material, Chunk, SourceEntry, MaterialStatus, MaterialSourceType, Attachment, Message, MessageKind, MessageDeliveryState, MessageActivity, MessageGrounding, Deck, Card, CardScheduling, ReviewLog, Concept, ConceptEdge, ConceptSource, CardConcept, MaterialExtraction, MaterialExtractionStatus, EdgeConfidence, ConceptRelation, OverlayThread, OverlayMessage, ArtifactVersion, CreateArtifactVersionInput } from "./schema";

@@ -1,6 +1,15 @@
 import { db } from "./index";
 import type { Material, MaterialSourceType, MaterialStatus } from "./schema";
-import { deletePageImages, deleteSourcePdf } from "@/lib/ingest/pdf-pages";
+// Lazily imported inside deleteMaterial so the DB module graph does not eagerly
+// load mupdf (which uses top-level await, incompatible with the project's CJS
+// test transpile). deleteMaterial is the only caller and runs at request time,
+// not module load — so the dynamic import has no latency impact on the hot path.
+type PdfPagesApi = typeof import("@/lib/ingest/pdf-pages");
+let pdfPagesPromise: Promise<PdfPagesApi> | null = null;
+function loadPdfPages(): Promise<PdfPagesApi> {
+  if (!pdfPagesPromise) pdfPagesPromise = import("@/lib/ingest/pdf-pages");
+  return pdfPagesPromise;
+}
 
 export function createMaterial(init: {
   projectId: string;
@@ -65,10 +74,11 @@ export function updateMaterialStatus(
   }
 }
 
-export function deleteMaterial(id: string): void {
+export async function deleteMaterial(id: string): Promise<void> {
   // ON DELETE CASCADE drops chunks; also remove any rendered page images and
   // the retained source PDF on disk so we don't orphan files when their
   // material row goes away.
+  const { deletePageImages, deleteSourcePdf } = await loadPdfPages();
   deletePageImages(id);
   deleteSourcePdf(id);
   db.prepare("DELETE FROM materials WHERE id = ?").run(id);

@@ -1,5 +1,6 @@
 import type { SourceEntry } from "@/lib/db/schema";
 import { artifactKindLabel, classifyArtifact } from "@/lib/artifacts/schema";
+import { ARTIFACT_FENCE_SOURCE, extractNativeArtifactEntries } from "@/lib/artifacts/entries";
 
 export type ContextArtifactKind = "document" | "diagram" | "visualization" | "flashcards";
 
@@ -31,7 +32,6 @@ export type ConversationContext = {
 };
 
 const MERMAID_FENCE = /^```mermaid\b/m;
-const ARTIFACT_FENCE = /^```(artifact|artifact-html)[^\S\r\n]*\r?\n([\s\S]*?)(?:\r?\n```|(?![\s\S]))/m;
 const FLASHCARD_FENCE = /^```flashcard\b/m;
 const HEADING = /^#{1,6}\s+(.+?)\s*#*\s*$/m;
 
@@ -59,27 +59,21 @@ function artifactForMessage(message: ContextMessage): ConversationArtifact[] {
       label: "Diagram",
     });
   }
-  const artifactFence = message.content.match(ARTIFACT_FENCE);
-  if (artifactFence) {
-    const [, language, source] = artifactFence;
-    const classification = language === "artifact-html"
-      ? { type: "legacy-html" as const }
-      : classifyArtifact(source);
-    if (classification.type === "native") {
-      artifacts.push({
-        id: `${message.id}:visualization`,
-        messageId: message.id,
-        kind: "visualization",
-        label: classification.artifact.title ?? artifactKindLabel(classification.artifact.kind),
-      });
-    } else if (classification.type === "legacy-html") {
-      artifacts.push({
-        id: `${message.id}:visualization`,
-        messageId: message.id,
-        kind: "visualization",
-        label: "Visualization",
-      });
-    }
+  for (const entry of extractNativeArtifactEntries(message.id, message.content)) {
+    artifacts.push({
+      id: entry.id,
+      messageId: message.id,
+      kind: "visualization",
+      label: entry.artifact.title ?? artifactKindLabel(entry.artifact.kind),
+    });
+  }
+  if (hasLegacyArtifactFence(message.content)) {
+    artifacts.push({
+      id: `${message.id}:visualization`,
+      messageId: message.id,
+      kind: "visualization",
+      label: "Visualization",
+    });
   }
   if (FLASHCARD_FENCE.test(message.content)) {
     artifacts.push({
@@ -116,4 +110,19 @@ export function buildConversationContext(messages: ContextMessage[]): Conversati
   }
 
   return { artifacts, sources: [...sources.values()] };
+}
+
+// Detects legacy HTML artifact fences (`artifact-html`, or an `artifact` fence
+// whose payload classifies as legacy HTML) so the context rail keeps surfacing
+// them with the existing `${messageId}:visualization` id. Native and invalid
+// fences are handled by `extractNativeArtifactEntries`.
+function hasLegacyArtifactFence(content: string): boolean {
+  const fence = new RegExp(ARTIFACT_FENCE_SOURCE, "gm");
+  for (const match of content.matchAll(fence)) {
+    const [, language, source] = match;
+    if (language === "artifact-html") return true;
+    const classification = classifyArtifact(source);
+    if (classification.type === "legacy-html") return true;
+  }
+  return false;
 }

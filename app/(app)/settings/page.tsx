@@ -120,7 +120,7 @@ export default function SettingsPage() {
           Model &amp; connection
         </motion.h1>
         <motion.p {...m} variants={fadeUp} className="mt-2 text-[15px] text-content-muted">
-          These control how StudyGPT talks to the model. Changes apply to new
+          These control how Loom talks to the model. Changes apply to new
           conversations. The provider layer is swappable — today only Ollama is
           wired, but adding Claude or GPT later is one file plus a switch here.
         </motion.p>

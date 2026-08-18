@@ -8,12 +8,17 @@ import {
   getBuildProgress,
 } from "@/lib/db";
 import { conceptMasteryForProject } from "@/lib/db/mastery";
+import { withRouteHandlerNoParams } from "@/lib/server/withRouteHandler";
 
 // GET /api/concepts?projectId= — the concept graph read shape consumed by the
 // (SP2) graph page and the /projects status chips. Returns concepts, edges,
 // and per-material extraction status. Mastery fields (mastery, band) arrive
 // in SP4.
-export async function GET(req: Request) {
+//
+// projectId is a query param (not a JSON body), so validateBody does not
+// apply; the existing query-param guard below is kept as-is. withRouteHandler
+// adds the error boundary.
+export const GET = withRouteHandlerNoParams(async ({ request: req }) => {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   if (typeof projectId !== "string" || !projectId.trim()) {
@@ -60,4 +65,4 @@ export async function GET(req: Request) {
   // Live build progress (chunk-level) if an extraction is in flight, else null.
   const progress = getBuildProgress(projectId) ?? null;
   return NextResponse.json({ concepts, edges, materials, progress });
-}
+});

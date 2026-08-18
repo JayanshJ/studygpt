@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, getMaterial } from "@/lib/db";
 import { ingestFromText } from "@/lib/ingest";
+import { withRouteHandler } from "@/lib/server/withRouteHandler";
 
 // POST /api/materials/[id]/rechunk — re-chunk an existing material from its
 // stored text without re-fetching the source. Used after the chunking
@@ -8,11 +9,11 @@ import { ingestFromText } from "@/lib/ingest";
 // wipe the old chunks + extraction record, re-run chunkText+embed on the
 // stored text, and flip back to ready. The next build re-extracts (the
 // extraction record is gone, so it isn't skipped) using the new chunk shape.
-export async function POST(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
+//
+// No request body to validate; withRouteHandler provides the error boundary
+// (catch + sanitized 500) and awaits the [id] param.
+export const POST = withRouteHandler<{ id: string }>(async ({ params }) => {
+  const { id } = params;
   const material = getMaterial(id);
   if (!material) return NextResponse.json({ error: "Material not found" }, { status: 404 });
   if (!material.text) return NextResponse.json({ error: "Material has no text to re-chunk" }, { status: 400 });
@@ -26,4 +27,4 @@ export async function POST(
   // delete old chunks, which is why we did that above.
   await ingestFromText(id, material.text);
   return NextResponse.json(getMaterial(id));
-}
+});

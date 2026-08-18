@@ -7,12 +7,15 @@ import { Markdown } from "./Markdown";
 import { SourcesPanel } from "./SourcesPanel";
 import { OverlaySourceMarkers } from "./chat/OverlaySourceMarkers";
 import { AnswerInsights } from "./chat/AnswerInsights";
+import { SourceCitationStrip } from "./chat/SourceCitationStrip";
+import { StudyActions } from "./chat/StudyActions";
 import { IconButton } from "@/components/ui/IconButton";
 import { Button } from "@/components/ui/Button";
 import { useMotion, fadeUp } from "@/lib/motion";
 import { normalizeLabel } from "@/lib/concepts/slug";
 import type { SourceEntry, Attachment, MessageActivity, MessageGrounding } from "@/lib/db/schema";
 import type { OverlayAnchor } from "@/lib/chat/overlay-threads";
+import type { StudyAction } from "@/lib/chat/study-actions";
 import { interruptedReplyLabel } from "@/lib/chat/delivery-state";
 
 // Shallow equality on the attachments an edit produced vs. the originals, so
@@ -63,6 +66,16 @@ interface Props {
   ephemeral?: boolean;
   overlayAnchors?: OverlayAnchor[];
   onOpenOverlay?: (anchor: OverlayAnchor) => void;
+  onOpenSource?: (source: SourceEntry) => void;
+  studyActions?: StudyAction[];
+  onStudyAction?: (action: StudyAction) => void;
+  // Native-artifact version overrides keyed by stable entry id, plus the
+  // change/error handlers that the in-artifact version menu calls. Threaded
+  // through Markdown → NativeArtifact so an edited version replaces the
+  // immutable parsed payload for its fence only.
+  artifactVersionOverrides?: Record<string, import("@/components/artifacts/NativeArtifact").NativeArtifactVersionOverride>;
+  onArtifactVersionChange?: (entryId: string, result: { versionId: string; artifact: import("@/lib/artifacts/schema").NativeArtifact }) => void;
+  onArtifactVersionError?: (message: string) => void;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -105,6 +118,12 @@ export function ChatMessage({
   ephemeral = false,
   overlayAnchors = [],
   onOpenOverlay,
+  onOpenSource,
+  studyActions,
+  onStudyAction,
+  artifactVersionOverrides,
+  onArtifactVersionChange,
+  onArtifactVersionError,
 }: Props) {
   const isUser = role === "user";
   const [editing, setEditing] = useState(false);
@@ -314,6 +333,10 @@ export function ChatMessage({
               streaming={streaming}
               conversationTitle={conversationTitle}
               conversationId={conversationId}
+              messageId={id}
+              artifactVersionOverrides={artifactVersionOverrides}
+              onArtifactVersionChange={onArtifactVersionChange}
+              onArtifactVersionError={onArtifactVersionError}
               ephemeral={ephemeral}
             />
           </div>
@@ -354,6 +377,7 @@ export function ChatMessage({
                 </a>
               </div>
             )}
+            <SourceCitationStrip sources={sources ?? []} onOpenSource={onOpenSource} />
             <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />
             <AnswerInsights activities={activities} grounding={grounding} />
             {deliveryState === "interrupted" && interruptedReplyLabel(content) && (
@@ -390,6 +414,10 @@ export function ChatMessage({
             streaming={streaming}
             conversationTitle={conversationTitle}
             conversationId={conversationId}
+            messageId={id}
+            artifactVersionOverrides={artifactVersionOverrides}
+            onArtifactVersionChange={onArtifactVersionChange}
+            onArtifactVersionError={onArtifactVersionError}
             ephemeral={ephemeral}
           />
         </div>
@@ -409,8 +437,12 @@ export function ChatMessage({
               </IconButton>
             )}
           </div>
+          <SourceCitationStrip sources={sources ?? []} onOpenSource={onOpenSource} />
           <SourcesPanel sources={sources ?? []} allMaterials={allMaterials} />
           <AnswerInsights activities={activities} grounding={grounding} />
+          {studyActions && studyActions.length > 0 && onStudyAction && (
+            <StudyActions messageId={id ?? ""} actions={studyActions} onSelect={onStudyAction} />
+          )}
           {deliveryState === "interrupted" && interruptedReplyLabel(content) && (
             <div className="mono mt-4 flex items-center gap-2 text-[11px] text-content-faint">
               <span>{interruptedReplyLabel(content)}</span>

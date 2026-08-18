@@ -6,18 +6,58 @@ import { ChartArtifact } from "./ChartArtifact";
 import { ComparisonArtifact } from "./ComparisonArtifact";
 import { StepsArtifact } from "./StepsArtifact";
 import { TableArtifact } from "./TableArtifact";
+import { ArtifactVersionMenu, type ArtifactHistoryEntry } from "./ArtifactVersionMenu";
 
-export function NativeArtifact({ artifact }: { artifact: NativeArtifactEnvelope }) {
-  const source = JSON.stringify(artifact);
+export type NativeArtifactVersionOverride = {
+  versionId: string;
+  artifact: NativeArtifactEnvelope;
+  history: ArtifactHistoryEntry[];
+};
+
+// Renders a native artifact inside platform chrome. When a `versionOverride`
+// is supplied (an edited version persisted via /api/artifacts/[id]), the
+// active version's payload replaces the immutable parsed payload and the
+// version menu is mounted so the learner can transform/restore it. `legacy`
+// flags artifact-html fences so the menu explains they aren't editable.
+// `artifactId` is the stable entry id (`${messageId}:artifact:${ordinal}`) the
+// menu uses to call the transform/restore endpoints; it is required when
+// `onVersionChange` is supplied so the menu can address the right artifact.
+export function NativeArtifact({
+  artifact,
+  artifactId,
+  versionOverride,
+  legacy,
+  onVersionChange,
+  onVersionError,
+}: {
+  artifact: NativeArtifactEnvelope;
+  artifactId?: string;
+  versionOverride?: NativeArtifactVersionOverride;
+  legacy?: boolean;
+  onVersionChange?: (result: { versionId: string; artifact: NativeArtifactEnvelope }) => void;
+  onVersionError?: (message: string) => void;
+}) {
+  const active = versionOverride?.artifact ?? artifact;
+  const source = JSON.stringify(active);
 
   return (
-    <ArtifactFrame kind={artifact.kind} title={artifact.title} summary={artifact.summary} source={source}>
-      {artifact.kind === "diagram" && <MermaidGraphic code={artifact.data.mermaid} />}
-      {artifact.kind === "table" && <TableArtifact columns={artifact.data.columns} rows={artifact.data.rows} />}
-      {artifact.kind === "comparison" && <ComparisonArtifact items={artifact.data.items} />}
-      {artifact.kind === "steps" && <StepsArtifact items={artifact.data.items} />}
-      {artifact.kind === "callout" && <CalloutArtifact {...artifact.data} />}
-      {artifact.kind === "chart" && <ChartArtifact {...artifact.data} title={artifact.title} summary={artifact.summary} />}
+    <ArtifactFrame kind={active.kind} title={active.title} summary={active.summary} source={source}>
+      {active.kind === "diagram" && <MermaidGraphic code={active.data.mermaid} />}
+      {active.kind === "table" && <TableArtifact columns={active.data.columns} rows={active.data.rows} />}
+      {active.kind === "comparison" && <ComparisonArtifact items={active.data.items} />}
+      {active.kind === "steps" && <StepsArtifact items={active.data.items} />}
+      {active.kind === "callout" && <CalloutArtifact {...active.data} />}
+      {active.kind === "chart" && <ChartArtifact {...active.data} title={active.title} summary={active.summary} />}
+      {onVersionChange && artifactId && (
+        <ArtifactVersionMenu
+          artifactId={artifactId}
+          legacy={legacy ?? false}
+          history={versionOverride?.history ?? []}
+          activeVersionId={versionOverride?.versionId ?? null}
+          onVersionChange={(result) => onVersionChange(result)}
+          onError={onVersionError}
+        />
+      )}
     </ArtifactFrame>
   );
 }

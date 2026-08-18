@@ -3,12 +3,18 @@ import { createMaterial, getMaterial, getProject, updateMaterialStatus, findPdfM
 import { getModelConfig, getProvider } from "@/lib/llm/provider";
 import { extractPdf, extractUrl, ingestFromText, healMaterialFromPdf } from "@/lib/ingest";
 import { saveSourcePdf, renderPdfPages, hasSourcePdf } from "@/lib/ingest/pdf-pages";
+import { withRouteHandlerNoParams } from "@/lib/server/withRouteHandler";
 
 // POST /api/materials — multipart/form-data: { projectId, title?, file? | url? }
 // or JSON: { projectId, title?, url }. Creates a material (status=processing),
 // extracts text, ingests (chunks+embeds) synchronously, and returns the material
 // row (status will be `ready` or `error` by the time we respond).
-export async function POST(req: Request) {
+//
+// Multipart route: body is form-data (file upload) OR JSON, not a single JSON
+// shape, so validateBody (JSON-only) does not apply. The existing formData/json
+// parsing + projectId/url guards below are kept as-is; this wrapper only adds
+// the error boundary (catch + sanitized 500).
+export const POST = withRouteHandlerNoParams(async ({ request: req }) => {
   const contentType = req.headers.get("content-type") || "";
   let projectId: string | undefined;
   let title: string | undefined;
@@ -126,4 +132,4 @@ export async function POST(req: Request) {
 
   // Re-read so the response reflects the final status/text/error.
   return NextResponse.json(getMaterial(material.id), { status: 201 });
-}
+});

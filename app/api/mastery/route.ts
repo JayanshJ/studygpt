@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProject, listConceptsForProject, conceptMasteryForProject } from "@/lib/db";
 import type { Band } from "@/lib/mastery/model";
+import { withRouteHandlerNoParams } from "@/lib/server/withRouteHandler";
 
 const BAND_RANK: Record<Band, number> = {
   slipping: 0,
@@ -10,7 +11,11 @@ const BAND_RANK: Record<Band, number> = {
   unknown: 4,
 };
 
-export async function GET(req: Request) {
+// GET /api/mastery?projectId= — per-concept mastery rows for a project.
+// projectId is a query param (not a JSON body), so validateBody does not
+// apply; the existing query-param guard below is kept as-is. withRouteHandler
+// adds the error boundary.
+export const GET = withRouteHandlerNoParams(async ({ request: req }) => {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   if (typeof projectId !== "string" || !projectId.trim()) {
@@ -46,4 +51,4 @@ export async function GET(req: Request) {
   });
 
   return NextResponse.json({ rows });
-}
+});

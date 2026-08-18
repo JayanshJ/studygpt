@@ -284,11 +284,11 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
   }
 
   return (
-    <form onSubmit={onSubmit} className="px-4 pb-4 pt-2 tab:px-6 tab:pb-5">
+    <form onSubmit={onSubmit} className="px-4 pb-4 pt-3 tab:px-6 tab:pb-5">
       {(gateMsg || voice.message) && (
         <div className="chat-composer-wrapper mono mb-1 text-[11px] text-danger">{gateMsg || voice.message}</div>
       )}
-      <div className="chat-composer-wrapper rounded-panel border border-border bg-surface p-3 shadow-card transition-[border-color,box-shadow,transform] duration-fast ease-out focus-within:-translate-y-px focus-within:border-border-strong focus-within:shadow-float">
+      <div className="chat-composer-wrapper rounded-panel border border-border bg-surface p-3 transition-[border-color,box-shadow,transform] duration-fast ease-out focus-within:-translate-y-px focus-within:border-border-strong focus-within:shadow-card">
         {pending.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {pending.map((p) => (
@@ -399,7 +399,7 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
             onPaste={onPaste}
             rows={1}
             disabled={disabled}
-            placeholder={placeholder || "Ask about a concept…"}
+            placeholder={placeholder || "Message Loom…"}
             className="max-h-48 flex-1 resize-none bg-transparent px-1 py-1.5 text-[13px] leading-6 text-ink outline-none placeholder:text-content-faint disabled:opacity-50"
           />
           {streaming ? (
@@ -409,7 +409,8 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
               size="sm"
               onClick={onStop}
               aria-label="Stop generating"
-              className="shrink-0 border-rule text-rule hover:bg-rule/10"
+              className="shrink-0 border-rule bg-rule/5 text-rule hover:bg-rule/10"
+              title="Stop (Esc)"
             >
               <Square size={13} className="fill-current" />
               stop

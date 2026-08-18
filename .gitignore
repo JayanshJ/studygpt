@@ -49,3 +49,12 @@ tesseract-*.cache
 
 # superpowers (SDD ledger + brainstorming mockups — local scratch)
 /.superpowers/
+
+# local agent config — not for public
+/.claude/
+
+# local design specs/plans — not for public
+docs/superpowers/
+
+# packaged electron build output — do not commit
+release/

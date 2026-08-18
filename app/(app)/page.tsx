@@ -20,13 +20,17 @@ import { ChatOverlay } from "@/components/chat/ChatOverlay";
 import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
 import { SelectionAskController } from "@/components/chat/SelectionAskController";
 import { ConversationContextPanel } from "@/components/chat/ConversationContextPanel";
-import { ConversationSearch } from "@/components/chat/ConversationSearch";
+import { CommandPalette } from "@/components/chat/CommandPalette";
 import { ArtifactFocusDialog } from "@/components/chat/ArtifactFocusDialog";
+import { EvidenceDialog } from "@/components/chat/EvidenceDialog";
 import type { SelectionSnapshot } from "@/components/chat/selection";
 import { groupOverlayAnchors, type OverlayAnchor } from "@/lib/chat/overlay-threads";
 import { buildConversationContext, type ConversationArtifact, type ConversationSource } from "@/lib/chat/conversation-context";
-import type { ConversationSearchResult } from "@/lib/chat/conversation-search";
+import type { GlobalSearchResult } from "@/lib/chat/global-search";
 import { normalizeLabel } from "@/lib/concepts/slug";
+import { suggestStudyActions, type StudyAction, type StudyActionConcept } from "@/lib/chat/study-actions";
+import { useGlobalSearch } from "@/components/hooks/useGlobalSearch";
+import { useArtifactVersions } from "@/components/hooks/useArtifactVersions";
 import type {
   Attachment,
   Conversation,
@@ -68,16 +72,16 @@ type OverlaySession = {
 // conversation both surface these as one-click chips; the in-conversation
 // set is mode-aware so Feynman mode offers "teach me" prompts instead.
 const CHAT_SUGGESTIONS = [
-  "Explain the derivative",
-  "What are eigenvalues?",
-  "Derive the quadratic formula",
-  "Compare mitosis vs meiosis",
+  "Help me write a professional email",
+  "Summarize this article for me",
+  "Brainstorm ideas for a side project",
+  "Explain a tricky concept simply",
 ];
 const FEYNMAN_SUGGESTIONS = [
-  "Teach me logarithms",
-  "Explain photosynthesis back to me",
-  "How do transformers work?",
-  "What is recursion?",
+  "Quiz me on what I know",
+  "Help me practice explaining an idea",
+  "Role-play a conversation with me",
+  "Challenge my understanding",
 ];
 
 // Reflect the active conversation in the URL as `?c=<id>` so a hard reload
@@ -91,6 +95,19 @@ function syncUrl(id: string | null) {
   window.history.replaceState(null, "", url);
 }
 
+// Map the DB mastery band (strong|learning|slipping|untested|unknown) onto the
+// StudyActionConcept band vocabulary (new|needs-practice|review|mastered|null).
+// Low-mastery ("new"/"needs-practice") drives the quiz-me suggestion; "unknown"
+// (no linked cards) maps to null so it never triggers a quiz. Reused from the
+// existing /api/concepts route — no model call, no new endpoint.
+const BAND_TO_STUDY: Record<string, StudyActionConcept["band"]> = {
+  untested: "new",
+  slipping: "needs-practice",
+  learning: "review",
+  strong: "mastered",
+  unknown: null,
+};
+
 export default function Page() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -103,11 +120,8 @@ export default function Page() {
   const [convSheetOpen, setConvSheetOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [contextSheetOpen, setContextSheetOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<ConversationSearchResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [focusedArtifact, setFocusedArtifact] = useState<{ content: string; kind: ConversationArtifact["kind"]; title: string } | null>(null);
+  const [focusedSource, setFocusedSource] = useState<SourceEntry | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -116,6 +130,17 @@ export default function Page() {
   // the SourcesPanel can show ALL of the project's materials (not just the
   // ones cited in this turn) and mark which were used. Cleared on project change.
   const [activeProjectMaterials, setActiveProjectMaterials] = useState<{ id: string; title: string }[]>([]);
+  // Global command palette (search state + debounced fetch + Cmd/Ctrl+K) and
+  // native-artifact version overrides (load + transform/restore handlers),
+  // extracted into hooks so this composition root stays legible. See
+  // components/hooks/useGlobalSearch.ts and useArtifactVersions.ts.
+  const search = useGlobalSearch(activeProjectId);
+  const {
+    overrides: artifactVersionOverrides,
+    handleVersionChange: handleArtifactVersionChange,
+    handleError: handleArtifactVersionError,
+    resetForNewConversation: resetArtifactVersionOverrides,
+  } = useArtifactVersions(conversation, messages, setError);
   const [models, setModels] = useState<Array<{ id: string; vision: boolean }>>([]);
   // True until the first conversations fetch resolves — drives the sidebar's
   // skeleton rows so the first paint doesn't look like an empty account.
@@ -126,9 +151,25 @@ export default function Page() {
   const [lastWeb, setLastWeb] = useState(true);
   const [overlaySession, setOverlaySession] = useState<OverlaySession | null>(null);
   const [overlayAnchors, setOverlayAnchors] = useState<Record<string, OverlayAnchor[]>>({});
+  // Active-project concepts (label + mastery band) for study-action detection.
+  // Fetched from the existing /api/concepts route and cleared on project change.
+  const [activeProjectConcepts, setActiveProjectConcepts] = useState<StudyActionConcept[]>([]);
+  // Prompt to send as the first overlay turn when a study action opens the
+  // overlay. Cleared once consumed (ChatOverlay's send-once ref guards the
+  // actual send); also cleared when the overlay closes.
+  const [overlayInitialPrompt, setOverlayInitialPrompt] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastRunRef = useRef<Parameters<typeof runChat>[0] | null>(null);
+  // Always-fresh pointer to the actions the global keydown handler needs, so a
+  // listener bound once for the page lifetime still calls the latest closures
+  // (newConversation/stop are re-created each render).
+  const actionsRef = useRef<{
+    newConversation: () => void;
+    stop: () => void;
+    streaming: boolean;
+    closeOverlays: () => void;
+  }>({ newConversation: () => {}, stop: () => {}, streaming: false, closeOverlays: () => {} });
   // Remembers the last user-chosen `web` toggle setting. Regenerate/edit
   // don't go through the composer, so they reuse this value to preserve the
   // turn's web-search preference instead of reverting to the default.
@@ -138,6 +179,24 @@ export default function Page() {
   const { slotEl } = useSidebarSlot();
   const conversationContext = useMemo(() => buildConversationContext(messages), [messages]);
   const contextItemCount = conversationContext.artifacts.length + conversationContext.sources.length;
+
+  // Deterministic study actions per completed assistant message. Pure — no
+  // model call. Recomputed only when messages or the active-project concepts
+  // change. ChatMessage only renders chips for completed (!streaming) assistant
+  // answers, so computing for in-flight messages is harmless (the UI gates it).
+  const studyActionsByMessage = useMemo(() => {
+    const map: Record<string, StudyAction[]> = {};
+    for (const m of messages) {
+      if (m.role !== "assistant" || m.kind === "document") continue;
+      if (!m.content || !m.content.trim()) continue;
+      map[m.id] = suggestStudyActions({
+        content: m.content,
+        sources: m.sources ?? [],
+        concepts: activeProjectConcepts,
+      });
+    }
+    return map;
+  }, [messages, activeProjectConcepts]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("studygpt.context-rail.open");
@@ -196,6 +255,12 @@ export default function Page() {
     if (restoredRef.current || !initialConvId || !conversations.length || activeId) return;
     restoredRef.current = true;
     if (conversations.some((c) => c.id === initialConvId)) {
+      // `selectConversation` is a function declaration (hoisted), so this call
+      // is valid JS; the react-hooks/immutability rule flags the forward
+      // reference because it can't track it. Properly resolving this (wrapping
+      // in useCallback / moving the declaration) is part of the deferred
+      // page.tsx decomposition (TODO.md item #7), not this batch.
+      // eslint-disable-next-line react-hooks/immutability
       void selectConversation(initialConvId);
     } else {
       // Stale id (deleted in another tab) — clean the URL and stay on the
@@ -204,6 +269,32 @@ export default function Page() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConvId, conversations, activeId]);
+
+  // Auto-provision a ready-to-type conversation on first load. Landing on a
+  // welcome screen that forces a "start a conversation" click is friction the
+  // product should not have — chat is the home, so the composer must be ready
+  // immediately. Runs once after the conversation list loads: if there's no
+  // ?c restore and no active conversation, select the most recent existing
+  // chat, or — for a brand-new user with none — create one. The ?c restore
+  // effect above wins when it applies (it sets activeId first, which this
+  // guard yields to). Skipped on /graph handoff (?q) so the prefill path owns
+  // the mount.
+  const autoProvisionRef = useRef(false);
+  useEffect(() => {
+    if (autoProvisionRef.current) return;
+    // Wait for the conversation list fetch to resolve before deciding.
+    if (convLoading) return;
+    autoProvisionRef.current = true;
+    if (activeId || conversation) return; // ?c restore or handoff already engaged
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("q")) return;
+    if (conversations.length) {
+      // eslint-disable-next-line react-hooks/immutability
+      void selectConversation(conversations[0].id);
+    } else {
+      void newConversation();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convLoading, conversations, activeId, conversation]);
 
   // Handoff from /graph "ask in chat": ?projectId=<pid>&q=<prompt>. Create a
   // project-scoped conversation and prefill the composer so the user reviews +
@@ -284,29 +375,34 @@ export default function Page() {
     };
   }, [conversation?.project_id]);
 
+  // Load concept labels + mastery bands for the active project (no model call —
+  // reuses the existing /api/concepts route). Cleared on project change / no
+  // project. Used to suggest quiz-me for low-mastery mentioned concepts.
+  useEffect(() => {
+    const pid = conversation?.project_id ?? null;
+    if (!pid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveProjectConcepts([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/concepts?projectId=${encodeURIComponent(pid)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { concepts?: { label: string; band?: string }[] } | null) => {
+        if (cancelled || !d?.concepts) return;
+        setActiveProjectConcepts(
+          d.concepts.map((c) => ({ label: c.label, band: BAND_TO_STUDY[c.band ?? "unknown"] ?? null })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation?.project_id]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, assistantStreamId]);
-
-  useEffect(() => {
-    const value = searchQuery.trim();
-    if (!searchOpen || value.length < 2) {
-      return;
-    }
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => {
-      setSearchLoading(true);
-      fetch(`/api/search?q=${encodeURIComponent(value)}`, { signal: controller.signal })
-        .then((response) => response.ok ? response.json() : { results: [] })
-        .then((data: { results?: ConversationSearchResult[] }) => setSearchResults(data.results ?? []))
-        .catch(() => {})
-        .finally(() => setSearchLoading(false));
-    }, 140);
-    return () => {
-      controller.abort();
-      window.clearTimeout(timeout);
-    };
-  }, [searchOpen, searchQuery]);
 
   function scrollToMessage(messageId: string) {
     const target = document.getElementById(`message-${messageId}`);
@@ -318,8 +414,8 @@ export default function Page() {
     setContextSheetOpen(false);
   }
 
-  function selectContextArtifact(artifact: ConversationArtifact) {
-    const message = messages.find((candidate) => candidate.id === artifact.messageId);
+  function selectContextArtifact(artifact: ConversationArtifact, messageList = messages) {
+    const message = messageList.find((candidate) => candidate.id === artifact.messageId);
     if (!message) {
       scrollToMessage(artifact.messageId);
       return;
@@ -385,25 +481,70 @@ export default function Page() {
     void loadOverlayAnchors(conversation.id);
   }
 
-  async function selectConversation(id: string) {
+  async function selectConversation(id: string): Promise<{ conversation: Conversation; messages: MessageWithSources[] } | null> {
     setOverlaySession(null);
     setOverlayAnchors({});
+    resetArtifactVersionOverrides();
     if (streaming) abortRef.current?.abort();
     setActiveId(id);
     syncUrl(id);
     setError(null);
     setConvSheetOpen(false);
     const res = await fetch(`/api/conversations/${id}`);
-    const data = await res.json();
+    if (!res.ok) return null;
+    const data = await res.json() as { conversation: Conversation; messages: MessageWithSources[] };
     setConversation(data.conversation);
     setMessages(data.messages ?? []);
     void loadOverlayAnchors(id);
+    return data;
   }
 
-  async function selectSearchResult(result: ConversationSearchResult) {
-    setSearchOpen(false);
-    await selectConversation(result.conversationId);
-    if (result.messageId) {
+  async function openStoredOverlay(overlayId: string, conversationId: string) {
+    // A reopened stored overlay already has turns — it must NOT auto-send a
+    // study-action prompt (ChatOverlay's turns>0 guard handles the send-skip,
+    // and clearing here keeps the prop consistent).
+    setOverlayInitialPrompt(null);
+    const threadsResponse = await fetch(`/api/chat/overlays?conversationId=${encodeURIComponent(conversationId)}`);
+    if (!threadsResponse.ok) return;
+    const { threads = [] } = await threadsResponse.json() as { threads?: OverlayThread[] };
+    const thread = threads.find((candidate) => candidate.id === overlayId);
+    if (!thread) return;
+    const response = await fetch("/api/chat/overlays", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversationId,
+        sourceMessageId: thread.source_message_id,
+        selectedText: thread.selected_text,
+        textOffset: thread.text_offset,
+      }),
+    });
+    if (response.ok) setOverlaySession(await response.json() as OverlaySession);
+  }
+
+  async function selectSearchResult(result: GlobalSearchResult) {
+    search.closePalette();
+    if (result.kind === "material") {
+      window.location.assign(`/projects?material=${encodeURIComponent(result.materialId)}`);
+      return;
+    }
+    if (result.kind === "concept") {
+      window.location.assign(`/graph?concept=${encodeURIComponent(result.conceptId)}`);
+      return;
+    }
+
+    const data = await selectConversation(result.conversationId);
+    if (!data) return;
+    if (result.kind === "overlay") {
+      await openStoredOverlay(result.overlayId, result.conversationId);
+      return;
+    }
+    if (result.kind === "artifact") {
+      const artifact = buildConversationContext(data.messages).artifacts.find((candidate) => candidate.id === result.artifactId);
+      if (artifact) selectContextArtifact(artifact, data.messages);
+      return;
+    }
+    if (result.kind === "message" && result.messageId) {
       window.setTimeout(() => scrollToMessage(result.messageId!), 50);
     }
   }
@@ -417,7 +558,9 @@ export default function Page() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId: activeProjectId }),
     });
+    if (!res.ok) return; // a failed create must NOT push an error body into the list
     const conv: Conversation = await res.json();
+    if (!conv?.id) return; // guard against a non-conversation body polluting the list
     setConversations((prev) => [conv, ...prev]);
     setActiveId(conv.id);
     syncUrl(conv.id);
@@ -509,6 +652,10 @@ export default function Page() {
       delivery_state: "complete",
       attachments: null,
       tokens: null,
+      // Date.now() here is in the send-chat event handler (not render); the
+      // react-hooks/purity rule misidentifies the function context. Capturing
+      // the timestamp at call time is the correct behavior for a message row.
+      // eslint-disable-next-line react-hooks/purity
       created_at: Date.now(),
       status: "thinking",
     };
@@ -665,6 +812,9 @@ export default function Page() {
       delivery_state: "complete",
       attachments: attachments.length ? attachments : null,
       tokens: null,
+      // In the edit-and-resend event handler (not render); see the matching
+      // note on the send path above. react-hooks/purity misidentifies context.
+      // eslint-disable-next-line react-hooks/purity
       created_at: Date.now(),
     };
     const outgoing = [...messages, userMsg];
@@ -781,6 +931,64 @@ export default function Page() {
     return null;
   })();
 
+  // Keep the global-shortcut action pointer fresh each render (function
+  // declarations are hoisted so newConversation/stop/closeOverlays are in
+  // scope here). The keydown effect below reads through actionsRef so a
+  // once-bound listener always calls current closures.
+  actionsRef.current.newConversation = () => void newConversation();
+  actionsRef.current.stop = stop;
+  actionsRef.current.streaming = streaming;
+  actionsRef.current.closeOverlays = () => {
+    setOverlaySession(null);
+    setOverlayInitialPrompt(null);
+    setFocusedArtifact(null);
+    setFocusedSource(null);
+    setConvSheetOpen(false);
+    setContextSheetOpen(false);
+  };
+
+  // Global keyboard shortcuts, bound once for the page lifetime:
+  //   ⌘/Ctrl+N  → new conversation
+  //   Esc       → stop streaming; if not streaming, close any open overlay/dialog
+  // ⌘N is the standard "new" shortcut in chat apps; Esc-to-stop is the
+  // fastest way to halt a runaway answer without reaching for the mouse.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const a = actionsRef.current;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "n") {
+        event.preventDefault();
+        a.newConversation();
+        return;
+      }
+      if (event.key === "Escape") {
+        if (a.streaming) {
+          event.preventDefault();
+          a.stop();
+        } else {
+          a.closeOverlays();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Native macOS app-menu events, forwarded by the Electron preload
+  // (window.loomNative.onMenuAction). Only present in the packaged Mac app;
+  // absent in the browser (npm run dev), so guard for it. Routes each action
+  // to the matching handler. Reads through actionsRef/search.openPalette so a
+  // once-bound subscription always calls current closures.
+  useEffect(() => {
+    const loomNative = (window as unknown as { loomNative?: { onMenuAction: (cb: (a: string) => void) => () => void } }).loomNative;
+    if (!loomNative) return;
+    const off = loomNative.onMenuAction((action) => {
+      if (action === "new-conversation") actionsRef.current.newConversation();
+      else if (action === "search") search.openPalette();
+      else if (action === "toggle-sidebar") setContextOpen((v) => !v);
+    });
+    return off;
+  }, [search]);
+
   return (
     <>
       {/* Desktop conversation list lives in the global Sidebar (AppShell) via a
@@ -836,7 +1044,7 @@ export default function Page() {
             <span className="truncate text-[15px] italic text-ink-2">
               {conversation?.title ?? "Select or start a conversation"}
             </span>
-            <IconButton label="Search conversations" onClick={() => setSearchOpen(true)}>
+            <IconButton label="Search everything" onClick={search.openPalette}>
               <Search size={16} strokeWidth={1.8} />
             </IconButton>
           </div>
@@ -905,16 +1113,16 @@ export default function Page() {
             <div className="flex min-h-full items-center justify-center">
               <motion.div {...m} variants={fadeUp} className="w-full max-w-[560px]">
                 <Card accent className="px-8 py-10 sm:px-10">
-                  <p className="eyebrow">Study Notebook</p>
+                  <p className="eyebrow">Loom</p>
                   <h1 className="hero-title mt-4">
-                    Study anything,
+                    Ask anything.
                     <br />
-                    one concept at a time.
+                    Think out loud.
                   </h1>
                   <p className="hero-lede mt-4">
-                    Ask about the derivative, eigenvalues, or entropy — then flip on{" "}
-                    <span className="text-feynman">Feynman</span> to learn by explaining it
-                    back.
+                    A calm place to write, ask, and work through ideas — then flip on{" "}
+                    <span className="text-feynman">Feynman</span> mode to learn by
+                    explaining something back.
                   </p>
                   <div className="mt-7">
                     <Button variant="primary" onClick={() => newConversation()}>
@@ -990,12 +1198,54 @@ export default function Page() {
                     conversationTitle={conversation?.title}
                     conversationId={conversation?.id}
                     overlayAnchors={m.role === "assistant" ? overlayAnchors[m.id] ?? [] : []}
-                    onOpenOverlay={resolveOverlay}
+                    onOpenOverlay={(anchor) => {
+                      // Opening an overlay from a stored source-marker anchor must
+                      // NOT auto-send a study-action prompt — clear any stale one.
+                      setOverlayInitialPrompt(null);
+                      void resolveOverlay(anchor);
+                    }}
+                    onOpenSource={setFocusedSource}
+                    studyActions={m.role === "assistant" && m.kind !== "document" ? studyActionsByMessage[m.id] : undefined}
+                    onStudyAction={
+                      m.role === "assistant" && m.kind !== "document"
+                        ? (action) => {
+                            // Open the overlay anchored to the action's selectedText
+                            // and arrange for the action's prompt to be sent as the
+                            // first overlay turn. setOverlayInitialPrompt is batched
+                            // with resolveOverlay's setOverlaySession, so ChatOverlay
+                            // mounts with the prompt already in hand.
+                            setOverlayInitialPrompt(action.prompt);
+                            void resolveOverlay({
+                              sourceMessageId: m.id,
+                              selectedText: action.selectedText,
+                              textOffset: Math.max(0, m.content.indexOf(action.selectedText)),
+                            });
+                          }
+                        : undefined
+                    }
+                    artifactVersionOverrides={
+                      m.role === "assistant" && m.kind !== "document" && !(streaming && m.id === assistantStreamId)
+                        ? artifactVersionOverrides
+                        : undefined
+                    }
+                    onArtifactVersionChange={
+                      m.role === "assistant" && m.kind !== "document"
+                        ? handleArtifactVersionChange
+                        : undefined
+                    }
+                    onArtifactVersionError={handleArtifactVersionError}
                   />
                 </motion.div>
               ))}
               {conversation && !streaming && (
-                <SelectionAskController onAsk={resolveOverlay} />
+                <SelectionAskController
+                  onAsk={(snap) => {
+                    // Selection-ask opens a fresh overlay; it must not inherit a
+                    // stale study-action prompt.
+                    setOverlayInitialPrompt(null);
+                    void resolveOverlay(snap);
+                  }}
+                />
               )}
             </div>
           )}
@@ -1013,7 +1263,12 @@ export default function Page() {
               </div>
             )}
 
-            <div className="pb-[calc(0.5rem+env(safe-area-inset-bottom))] tab:pb-0">
+            {/* Composer: flush to the bottom of the content panel (native Mac
+                bottom-bar pattern, like Claude's app) — the form's own padding
+                handles the insets. A top divider separates it from the scroll
+                area instead of a floating card + shadow, which read less
+                native on macOS. */}
+            <div className="border-t border-line bg-paper">
               <ChatInput
                 onSend={sendMessage}
                 onStop={stop}
@@ -1025,8 +1280,8 @@ export default function Page() {
                 placeholder={
                   conversation
                     ? conversation.mode === "feynman"
-                      ? "Tell the tutor what concept you want to learn…"
-                      : "Ask about a concept… (Enter to send)"
+                      ? "Explain a concept back in your own words…"
+                      : "Message Loom… (Enter to send)"
                     : "Start a conversation first"
                 }
               />
@@ -1055,7 +1310,11 @@ export default function Page() {
             web={lastWeb}
             allMaterials={activeProjectMaterials}
             transcriptionAvailable={transcriptionAvailable}
-            onClose={() => setOverlaySession(null)}
+            initialPrompt={overlayInitialPrompt ?? undefined}
+            onClose={() => {
+              setOverlaySession(null);
+              setOverlayInitialPrompt(null);
+            }}
           />
         )}
         {focusedArtifact && (
@@ -1067,14 +1326,17 @@ export default function Page() {
             title={focusedArtifact.title}
           />
         )}
-        <ConversationSearch
-          open={searchOpen}
-          onOpenChange={setSearchOpen}
+        <EvidenceDialog source={focusedSource} onOpenChange={setFocusedSource} />
+        <CommandPalette
+          open={search.open}
+          onOpenChange={search.onOpenChange}
           onSelect={selectSearchResult}
-          results={searchResults}
-          query={searchQuery}
-          onQueryChange={setSearchQuery}
-          loading={searchLoading}
+          results={search.results}
+          query={search.query}
+          onQueryChange={search.setQuery}
+          loading={search.loading}
+          activeIndex={search.activeIndex}
+          onActiveIndexChange={search.setActiveIndex}
         />
       </main>
     </>

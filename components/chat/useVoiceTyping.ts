@@ -25,6 +25,7 @@ export function useVoiceTyping({ value, onValueChange, transcriptionAvailable = 
   const startedAtRef = useRef(0);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSpeechSupported(typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition));
   }, []);
 

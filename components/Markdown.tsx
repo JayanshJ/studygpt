@@ -9,12 +9,18 @@ import rehypePrettyCode from "rehype-pretty-code";
 import { CodeBlock } from "./CodeBlock";
 import { codeHighlightOptions } from "@/lib/markdown/highlight";
 import { Artifact } from "./Artifact";
-import { InvalidArtifact, NativeArtifact } from "./artifacts/NativeArtifact";
+import { InvalidArtifact, NativeArtifact, type NativeArtifactVersionOverride } from "./artifacts/NativeArtifact";
 import { FlashcardDeck } from "./FlashcardDeck";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { classifyArtifact } from "@/lib/artifacts/schema";
+import { extractNativeArtifactEntries, artifactEntryId } from "@/lib/artifacts/entries";
 import { extractText } from "@/lib/markdown/extract-text";
 import { normalizeMathDelimiters } from "@/lib/markdown/normalize-math";
+
+type ArtifactVersionChange = (
+  entryId: string,
+  result: { versionId: string; artifact: import("@/lib/artifacts/schema").NativeArtifact },
+) => void;
 
 // Route a fenced code block by its language: an ```artifact fence renders a
 // live sandboxed HTML visualization; a ```flashcard fence renders an
@@ -31,6 +37,11 @@ export function PreBlock({
   streaming,
   conversationTitle,
   conversationId,
+  messageId,
+  artifactVersionOverrides,
+  onArtifactVersionChange,
+  onArtifactVersionError,
+  content,
   ephemeral,
 }: {
   children?: ReactNode;
@@ -45,6 +56,15 @@ export function PreBlock({
   streaming?: boolean;
   conversationTitle?: string;
   conversationId?: string;
+  messageId?: string;
+  artifactVersionOverrides?: Record<string, NativeArtifactVersionOverride>;
+  onArtifactVersionChange?: ArtifactVersionChange;
+  onArtifactVersionError?: (message: string) => void;
+  // The full markdown content for the message — used to compute the stable
+  // artifact entry id (ordinal among artifact/artifact-html fences) that the
+  // server also computes via extractNativeArtifactEntries. Only consumed when
+  // an artifact fence is being routed.
+  content?: string;
   ephemeral?: boolean;
 }) {
   const codeEl = (Array.isArray(children) ? children[0] : children) as
@@ -72,9 +92,26 @@ export function PreBlock({
     }
     const classification = classifyArtifact(extractText(children));
     if (classification.type === "native") {
+      // Compute the SAME stable entry id the server uses
+      // (`${messageId}:artifact:${ordinal}`) so the version-override map and
+      // the transform/restore endpoints address the exact fence. The ordinal
+      // is this fence's index among all artifact/artifact-html fences, which
+      // matches extractNativeArtifactEntries' ordinal assignment.
+      const entryId = messageId && content
+        ? artifactEntryForFence(messageId, content, extractText(children))
+        : undefined;
+      const override = entryId ? artifactVersionOverrides?.[entryId] : undefined;
       return (
         <div data-selection-excluded>
-          <NativeArtifact artifact={classification.artifact} />
+          <NativeArtifact
+            artifact={classification.artifact}
+            artifactId={entryId}
+            versionOverride={override}
+            onVersionChange={entryId && onArtifactVersionChange
+              ? (result) => onArtifactVersionChange(entryId, result)
+              : undefined}
+            onVersionError={onArtifactVersionError}
+          />
         </div>
       );
     }
@@ -127,6 +164,19 @@ export function PreBlock({
   );
 }
 
+// Compute the stable artifact entry id for one rendered fence by matching its
+// payload against the entries extracted from the full message content. The
+// ordinal in `extractNativeArtifactEntries` counts every artifact/artifact-html
+// fence in order (native or not), so this matches the server's id exactly.
+// Returns the `${messageId}:artifact:${ordinal}` id, or undefined if the fence
+// isn't found among the native entries (e.g. it classified as native here but
+// the extractor saw it differently — defensive, falls back to no override).
+function artifactEntryForFence(messageId: string, content: string, fenceSource: string): string | undefined {
+  const entries = extractNativeArtifactEntries(messageId, content);
+  const match = entries.find((entry) => entry.source.trim() === fenceSource.trim());
+  return match?.id;
+}
+
 // The single markdown-rendering config for the app: remark-math + remark-gfm
 // (tables/strikethrough/autolinks/task-lists) + rehype-pretty-code (Shiki
 // syntax highlighting — async, so we render via MarkdownHooks, the
@@ -142,6 +192,10 @@ export function Markdown({
   streaming,
   conversationTitle,
   conversationId,
+  messageId,
+  artifactVersionOverrides,
+  onArtifactVersionChange,
+  onArtifactVersionError,
   ephemeral,
 }: {
   content: string;
@@ -149,6 +203,10 @@ export function Markdown({
   streaming?: boolean;
   conversationTitle?: string;
   conversationId?: string;
+  messageId?: string;
+  artifactVersionOverrides?: Record<string, NativeArtifactVersionOverride>;
+  onArtifactVersionChange?: ArtifactVersionChange;
+  onArtifactVersionError?: (message: string) => void;
   ephemeral?: boolean;
 }) {
   return (
@@ -163,6 +221,11 @@ export function Markdown({
               streaming={streaming}
               conversationTitle={conversationTitle}
               conversationId={conversationId}
+              messageId={messageId}
+              artifactVersionOverrides={artifactVersionOverrides}
+              onArtifactVersionChange={onArtifactVersionChange}
+              onArtifactVersionError={onArtifactVersionError}
+              content={content}
               ephemeral={ephemeral}
             />
           ),

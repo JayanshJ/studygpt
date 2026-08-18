@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getModelConfig } from "@/lib/llm/provider";
+import { withRouteHandlerNoParams } from "@/lib/server/withRouteHandler";
 
 // Voice typing: the client records a short clip with MediaRecorder and POSTs
 // it here; this route forwards it to OpenAI's Whisper transcription endpoint.
@@ -19,7 +20,13 @@ export async function GET() {
 
 // POST /api/transcribe — multipart/form-data with an `audio` File part.
 // Returns { text }. Errors: { error } with a 4xx/5xx status.
-export async function POST(req: Request) {
+//
+// The body is multipart audio, so there is no zod schema; the handler validates
+// the form part shape itself (400s for missing/empty audio). Wrapping in
+// withRouteHandlerNoParams adds only the outer error boundary: any thrown
+// error (other than the ones the handler already maps to 4xx/5xx) becomes a
+// sanitized 500 instead of an opaque unhandled exception.
+export const POST = withRouteHandlerNoParams(async ({ request }) => {
   const cfg = getModelConfig();
   if (!cfg.openaiApiKey) {
     return NextResponse.json({ error: "Voice transcription is not configured. Add an OpenAI API key in Settings." }, { status: 400 });
@@ -27,7 +34,7 @@ export async function POST(req: Request) {
 
   let form: FormData;
   try {
-    form = await req.formData();
+    form = await request.formData();
   } catch {
     return NextResponse.json({ error: "Expected multipart form data." }, { status: 400 });
   }
@@ -62,4 +69,4 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Could not reach the transcription service." }, { status: 502 });
   }
-}
+});

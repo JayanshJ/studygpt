@@ -1,6 +1,7 @@
 import puppeteer, { type Browser } from "puppeteer";
 import { getMessage, getConversation } from "@/lib/db";
 import { normalizeLabel } from "@/lib/concepts/slug";
+import { withRouteHandler } from "@/lib/server/withRouteHandler";
 
 // GET /api/messages/[id]/pdf — renders the existing /print/[id] page in a
 // headless Chromium and returns the bytes as a real .pdf file
@@ -32,15 +33,15 @@ function getBrowser(): Promise<Browser> {
   return globalForPdf.__pdfBrowser;
 }
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export const GET = withRouteHandler<{ id: string }>(async ({ request, params }) => {
+  const { id } = params;
   const msg = getMessage(id);
   if (!msg) return new Response("Not found", { status: 404 });
   const conv = getConversation(msg.conversation_id);
 
   // Origin comes from the incoming request (http://localhost:3000 in dev, the
   // real host under `next start`) — never hardcoded, never user-supplied.
-  const origin = new URL(req.url).origin;
+  const origin = new URL(request.url).origin;
   const slug = normalizeLabel(conv?.title ?? "") || "document";
 
   let page;
@@ -77,4 +78,4 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   } finally {
     if (page) await page.close().catch(() => {});
   }
-}
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, LayoutGroup } from "motion/react";
 import type { Conversation, Project } from "@/lib/db/schema";
 import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -75,6 +75,13 @@ export function ConversationListPane({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1">
         <div className="flex w-full flex-col gap-1">
+          {/* LayoutGroup gives Motion a stable layout-tracking context for the
+             animated conversation rows even though this list is rendered
+             through a React portal (the chat page portals this pane into the
+             global Sidebar). Without it, Motion's layout measurement crosses
+             the portal boundary and React emits a spurious "unique key"
+             warning for the keyed motion.div children. */}
+          <LayoutGroup id="conversation-list">
           {loading && scoped.length === 0 && (
             <>
               {[0, 1, 2, 3].map((i) => (
@@ -129,6 +136,7 @@ export function ConversationListPane({
               </motion.div>
             );
           })}
+          </LayoutGroup>
         </div>
       </div>
     </div>

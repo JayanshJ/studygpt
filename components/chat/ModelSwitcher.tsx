@@ -22,9 +22,21 @@ export function ModelSwitcher({
   models: ModelOption[];
   onChange: (model: string) => void;
 }) {
-  const options = models.some((model) => model.id === value)
-    ? models
-    : [{ id: value, vision: false }, ...models];
+  // Ensure the current value is always selectable, even before the backend
+  // model list loads (models=[] on first render) or when the conversation's
+  // stored model no longer exists on the backend. Dedupe by id so a backend
+  // that lists the same model id twice (Ollama can) can't produce duplicate
+  // React keys in the SelectItem list.
+  const options = (() => {
+    const hasValue = models.some((model) => model.id === value);
+    const list = hasValue ? models : [{ id: value, vision: false }, ...models];
+    const seen = new Set<string>();
+    return list.filter((model) => {
+      if (seen.has(model.id)) return false;
+      seen.add(model.id);
+      return true;
+    });
+  })();
   const selected = options.find((model) => model.id === value) ?? options[0];
 
   return (

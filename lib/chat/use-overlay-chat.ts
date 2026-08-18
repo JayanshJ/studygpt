@@ -49,6 +49,7 @@ export function useOverlayChat(
     const resolved = initialMessages.map(asTurn);
     runIdRef.current += 1;
     turnsRef.current = resolved;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTurns(resolved);
     setError(null);
     setStreaming(false);
