@@ -288,7 +288,7 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
       {(gateMsg || voice.message) && (
         <div className="chat-composer-wrapper mono mb-1 text-[11px] text-danger">{gateMsg || voice.message}</div>
       )}
-      <div className="chat-composer-wrapper rounded-panel border border-border bg-surface p-3 transition-[border-color,box-shadow,transform] duration-fast ease-out focus-within:-translate-y-px focus-within:border-border-strong focus-within:shadow-card">
+      <div className="chat-composer-wrapper rounded-panel border border-border bg-surface p-3 shadow-card transition-[border-color,box-shadow,transform] duration-fast ease-out focus-within:-translate-y-px focus-within:border-border-strong focus-within:shadow-float">
         {pending.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {pending.map((p) => (
@@ -400,7 +400,7 @@ export function ChatInput({ onSend, disabled, placeholder, streaming, onStop, pr
             rows={1}
             disabled={disabled}
             placeholder={placeholder || "Message Loom…"}
-            className="max-h-48 flex-1 resize-none bg-transparent px-1 py-1.5 text-[13px] leading-6 text-ink outline-none placeholder:text-content-faint disabled:opacity-50"
+            className="max-h-48 flex-1 resize-none bg-transparent px-1 py-1.5 text-[14px] leading-7 text-ink outline-none placeholder:text-content-faint disabled:opacity-50"
           />
           {streaming ? (
             <Button

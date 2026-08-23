@@ -73,9 +73,9 @@ type OverlaySession = {
 // set is mode-aware so Feynman mode offers "teach me" prompts instead.
 const CHAT_SUGGESTIONS = [
   "Help me write a professional email",
-  "Summarize this article for me",
-  "Brainstorm ideas for a side project",
-  "Explain a tricky concept simply",
+  "Debug this function for me",
+  "Summarize an article for me",
+  "Explain a concept I'm learning",
 ];
 const FEYNMAN_SUGGESTIONS = [
   "Quiz me on what I know",
@@ -973,22 +973,6 @@ export default function Page() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Native macOS app-menu events, forwarded by the Electron preload
-  // (window.loomNative.onMenuAction). Only present in the packaged Mac app;
-  // absent in the browser (npm run dev), so guard for it. Routes each action
-  // to the matching handler. Reads through actionsRef/search.openPalette so a
-  // once-bound subscription always calls current closures.
-  useEffect(() => {
-    const loomNative = (window as unknown as { loomNative?: { onMenuAction: (cb: (a: string) => void) => () => void } }).loomNative;
-    if (!loomNative) return;
-    const off = loomNative.onMenuAction((action) => {
-      if (action === "new-conversation") actionsRef.current.newConversation();
-      else if (action === "search") search.openPalette();
-      else if (action === "toggle-sidebar") setContextOpen((v) => !v);
-    });
-    return off;
-  }, [search]);
-
   return (
     <>
       {/* Desktop conversation list lives in the global Sidebar (AppShell) via a
@@ -1120,9 +1104,9 @@ export default function Page() {
                     Think out loud.
                   </h1>
                   <p className="hero-lede mt-4">
-                    A calm place to write, ask, and work through ideas — then flip on{" "}
-                    <span className="text-feynman">Feynman</span> mode to learn by
-                    explaining something back.
+                    A calm, local place to write, ask, and work through ideas.
+                    Attach materials to a project, or turn on study tools to learn
+                    by explaining something back.
                   </p>
                   <div className="mt-7">
                     <Button variant="primary" onClick={() => newConversation()}>
@@ -1175,7 +1159,7 @@ export default function Page() {
                   id={`message-${m.id}`}
                   layout={!streaming}
                   transition={layoutTransition}
-                  className={`${i === 0 ? "pt-2" : "mt-6 border-t border-border pt-6"}${highlightedMessageId === m.id ? " rounded-card bg-rule/5 ring-1 ring-rule/30 transition-[background-color,box-shadow] duration-fast" : ""}`}
+                  className={`${i === 0 ? "pt-2" : "mt-8"}${highlightedMessageId === m.id ? " rounded-card bg-rule/5 ring-1 ring-rule/30 transition-[background-color,box-shadow] duration-fast" : ""}`}
                 >
                   <ChatMessage
                     id={m.id}

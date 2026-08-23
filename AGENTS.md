@@ -10,12 +10,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Product North Star
 
-Every change must make StudyGPT easier to use **and** more intelligently aware
-of the learner's situation. Prefer obvious, low-friction interactions over
-manual steps, hidden modes, or extra configuration. Use the context already
-available to the platform—conversation, selected text, project materials,
-notation memory, and user intent—to provide the right help without making the
-learner repeat themselves.
+Loom is a general AI assistant that is especially good at studying. Every
+change must make Loom easier to use **and** more intelligently aware of the
+user's situation. Prefer obvious, low-friction interactions over manual steps,
+hidden modes, or extra configuration. Use the context already available to the
+platform—conversation, selected text, project materials, study state (concept
+mastery, notation memory), and user intent—to provide the right help without
+making the user repeat themselves.
 
 Before adding or changing a feature, check that it:
 

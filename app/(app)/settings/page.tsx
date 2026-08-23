@@ -39,6 +39,29 @@ export default function SettingsPage() {
   const [showVisionKey, setShowVisionKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const m = useMotion();
+  // Design language: "new" (black & orange) or "classic" (original palette).
+  // Persisted like the theme; applied pre-paint by ThemeScript.
+  const [design, setDesign] = useState<"new" | "classic">("new");
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("studygpt-design");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (stored === "classic") setDesign("classic");
+    } catch {
+      /* ignore storage failures (private mode, etc.) */
+    }
+  }, []);
+
+  function applyDesign(next: "new" | "classic") {
+    setDesign(next);
+    document.documentElement.dataset.design = next;
+    try {
+      localStorage.setItem("studygpt-design", next);
+    } catch {
+      /* ignore storage failures */
+    }
+  }
 
   useEffect(() => {
     fetch("/api/settings")
@@ -204,11 +227,11 @@ export default function SettingsPage() {
 
           <div className="mono mt-2 text-[11px] tracking-[0.18em] text-rule">VISION (DIAGRAMS)</div>
           <p className="mono -mt-4 text-[11px] text-content-faint">
-            When you ask for a diagram (e.g. an ER model), the app feeds the
-            relevant slide page images to this vision model so it can reproduce
-            your course&apos;s notation. Runs on a separate OpenAI-compatible
-            backend (OpenRouter by default). Leave the key blank to fall back to
-            a text-only diagram.
+            When you ask for a diagram (e.g. an ER model), the app can feed
+            relevant page images to this vision model so it reproduces your
+            notation conventions (e.g. for diagrams). Runs on a separate
+            OpenAI-compatible backend (OpenRouter by default). Leave the key
+            blank to fall back to a text-only diagram.
           </p>
 
           <Field
@@ -253,6 +276,33 @@ export default function SettingsPage() {
             {error && <span className="mono text-[12px] text-danger">{error}</span>}
           </div>
         </form>
+
+        <motion.div {...m} variants={fadeUp} className="mt-10 border-t border-border pt-6">
+          <h2 className="font-serif text-[1.15rem] font-semibold text-ink">Appearance</h2>
+          <p className="mt-1 text-[13px] text-content-muted">
+            The new look is a warm cream canvas with a terracotta accent and
+            soft shadows. Classic restores the original palette, grid, and
+            geometry.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Button
+              type="button"
+              variant={design === "new" ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => applyDesign("new")}
+            >
+              New (warm)
+            </Button>
+            <Button
+              type="button"
+              variant={design === "classic" ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => applyDesign("classic")}
+            >
+              Classic
+            </Button>
+          </div>
+        </motion.div>
       </div>
     </div>
   );

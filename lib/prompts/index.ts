@@ -1,4 +1,5 @@
 import type { ConversationMode } from "@/lib/db/schema";
+import { artifactKindListPrompt } from "@/lib/artifacts/schema";
 import { CHAT_SYSTEM_PROMPT } from "./chat";
 import { FEYNMAN_SYSTEM_PROMPT } from "./feynman";
 import { DOCUMENT_SYSTEM_PROMPT } from "./document";
@@ -30,6 +31,8 @@ Formatting constraints for mathematical output (MUST follow):
 // something visual or interactive, the model emits a native JSON `artifact`
 // block. Exceptional interactions outside the native kinds use `artifact-html`.
 // Appended to every mode's prompt so the capability is available everywhere.
+// The kind list is derived from the artifact registry so it can never drift
+// from the validators (lib/artifacts/registry.ts → kinds/*).
 export const ARTIFACT_RULES = `
 Inline visualization artifacts:
 - When the user explicitly wants a visual or interactive output, emit a SINGLE \`artifact\` fenced block containing JSON only. Do not put Markdown, prose, or JSON fences inside that block.
@@ -39,9 +42,8 @@ Inline visualization artifacts:
   {"schema":"studygpt.artifact","version":1,"kind":"callout","title":"Key idea","data":{"body":"Selection reduces relation size.","tone":"idea"}}
   \`\`\`
 
-- Pick exactly one supported kind and its matching data shape: \`diagram\`, \`table\`, \`comparison\`, \`steps\`, \`callout\`, or \`chart\`. A \`diagram\` contains Mermaid source; for simple structural diagrams, prefer a direct \`mermaid\` fence instead.
-- A \`chart\` uses \`{"chartType":"line","labels":["2023","2024"],"series":[{"label":"GDP","values":[100,120]}]}\`. Put the chart title in the envelope's top-level \`title\`; do not use \`xAxis\`, \`yAxis\`, \`name\`, or per-series colors.
-- Use \`artifact-html\` only when the user requests interaction unavailable in the v1 native kinds. It may contain custom HTML for the legacy sandbox.
+- Pick exactly one supported kind and its matching data shape: ${artifactKindListPrompt()}. A \`diagram\` contains Mermaid source; for simple structural diagrams, prefer a direct \`mermaid\` fence instead.
+- Use \`artifact-html\` only when the user requests interaction unavailable in the native kinds. It may contain custom HTML for the legacy sandbox.
 - Never emit full document chrome, style tags, scripts, HTML, SVG, URLs, or base64 data in an \`artifact\` JSON envelope.`;
 
 // Flashcard decks: the user asks for "flashcards" / "quiz me" / "test me on X".
@@ -143,5 +145,5 @@ You transform an existing StudyGPT native artifact according to the user's instr
 - Return ONLY a single fenced \`artifact\` block containing JSON. No prose, no other fences.
 - The JSON MUST keep the discriminator \`"schema":"studygpt.artifact"\` and \`"version":1\`, and keep the same \`kind\` unless the instruction explicitly asks to change it.
 - Preserve the artifact's meaning and grounding; apply only the requested edit (simplify, add an example, turn into flashcards, rephrase, etc.).
-- Never emit HTML, scripts, SVG, URLs, or base64. Stay within the supported kinds: diagram, table, comparison, steps, callout, chart.
+- Never emit HTML, scripts, SVG, URLs, or base64. Stay within the supported kinds: ${artifactKindListPrompt()}.
 - If relevant project context is provided, keep the transformed artifact consistent with it.`;

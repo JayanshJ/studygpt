@@ -50,7 +50,7 @@ export function DialogContent({
       <DialogPrimitive.Content
         className={cn(
           "fixed z-50 border border-border bg-surface shadow-float",
-          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:[animation-timing-function:var(--ease-spring)]",
           position,
           className,
         )}

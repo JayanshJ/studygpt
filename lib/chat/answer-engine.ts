@@ -5,8 +5,9 @@ import { getModelConfig, getProvider, getVisionLanguageModel } from "@/lib/llm/p
 import { isVisionModel } from "@/lib/llm/vision";
 import { documentSystemPrompt, systemPromptFor } from "@/lib/prompts";
 import { makeWebSearchTool } from "@/lib/tools/web-search";
-import { listActiveProjectMemory, listConceptsForProject } from "@/lib/db";
+import { listActiveProjectMemory, listConceptsForProject, getProject } from "@/lib/db";
 import { buildProjectMemoryBlock } from "@/lib/chat/project-memory";
+import { buildStudyPersonaBlock } from "@/lib/prompts/study";
 import type { Attachment, Conversation, SourceEntry } from "@/lib/db/schema";
 import { conceptMasteryForProject } from "@/lib/db/mastery";
 import { buildMasteryBlock } from "@/lib/mastery/model";
@@ -103,18 +104,31 @@ export async function streamAnswer(input: AnswerInput, emit: AnswerEmitter): Pro
 
   let masteryBlock = "";
   let projectMemoryBlock = "";
+  let studyPersona = "";
+  // studyEnabled is hoisted to function scope so the notation block below can
+  // gate on it without re-loading the project row. False when there's no
+  // project or the project has the study capability off.
+  let studyEnabled = false;
   if (conversation.project_id) {
+    // Memory and RAG materials are generic project capabilities (useful for a
+    // coding or writing project too). The study capability (concept mastery,
+    // diagram notation, the study-tutor persona) is opt-in per project.
+    const project = getProject(conversation.project_id);
+    studyEnabled = project?.study_enabled === true;
     projectMemoryBlock = buildProjectMemoryBlock(listActiveProjectMemory(conversation.project_id));
-    const masteryMap = conceptMasteryForProject(conversation.project_id, Date.now());
-    if (masteryMap.size > 0) {
-      const labelsById = new Map(listConceptsForProject(conversation.project_id).map((concept) => [concept.id, concept.label]));
-      masteryBlock = buildMasteryBlock(
-        [...masteryMap.entries()].map(([id, mastery]) => ({
-          label: labelsById.get(id) ?? id,
-          mastery: mastery.mastery,
-          band: mastery.band,
-        })),
-      );
+    if (studyEnabled) {
+      studyPersona = buildStudyPersonaBlock();
+      const masteryMap = conceptMasteryForProject(conversation.project_id, Date.now());
+      if (masteryMap.size > 0) {
+        const labelsById = new Map(listConceptsForProject(conversation.project_id).map((concept) => [concept.id, concept.label]));
+        masteryBlock = buildMasteryBlock(
+          [...masteryMap.entries()].map(([id, mastery]) => ({
+            label: labelsById.get(id) ?? id,
+            mastery: mastery.mastery,
+            band: mastery.band,
+          })),
+        );
+      }
     }
   }
 
@@ -152,7 +166,7 @@ export async function streamAnswer(input: AnswerInput, emit: AnswerEmitter): Pro
     classifyDiagramType(lastUserContent) ??
     classifyRecentUserDiagramType(messages.filter((message) => message.role === "user").map((message) => message.content));
   let notationBlock = "";
-  if (diagramType && conversation.project_id) {
+  if (diagramType && conversation.project_id && studyEnabled) {
     const resolved = await resolveNotation({
       projectId: conversation.project_id,
       diagramType,
@@ -170,6 +184,7 @@ export async function streamAnswer(input: AnswerInput, emit: AnswerEmitter): Pro
   const system =
     `Current date: ${new Date().toISOString().slice(0, 10)}.\n` +
     basePrompt +
+    studyPersona +
     (projectMemoryBlock ? `\n\n${projectMemoryBlock}` : "") +
     (masteryBlock ? `\n\n${masteryBlock}` : "") +
     webNote +

@@ -268,7 +268,7 @@ export function ChatMessage({
   if (isUser) {
     return (
       <motion.div {...m} variants={fadeUp} className="group relative">
-        <div className="rounded-card border border-border bg-surface px-4 py-3 font-mono italic text-[13px] leading-relaxed text-content shadow-card">
+        <div className="w-fit max-w-full whitespace-pre-wrap rounded-card bg-surface-2 px-4 py-3 text-[14px] leading-relaxed text-content">
           {content}
         </div>
         {attachments && attachments.length > 0 && (
@@ -359,7 +359,7 @@ export function ChatMessage({
             {id && !ephemeral && (
               <div className="mono mt-5 flex flex-wrap items-center gap-3 text-[12px] tracking-wide">
                 <Button
-                  variant="primary"
+                  variant="secondary"
                   size="sm"
                   onClick={downloadPdf}
                   disabled={pdfState === "rendering"}

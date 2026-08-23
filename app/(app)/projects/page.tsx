@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { Badge } from "@/components/ui/Badge";
+import { Switch } from "@/components/ui/Switch";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ export default function ProjectsPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [memoryEntries, setMemoryEntries] = useState<ProjectMemoryEntry[]>([]);
   const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectStudy, setNewProjectStudy] = useState(false);
   const [addUrl, setAddUrl] = useState("");
   const [addTitle, setAddTitle] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -144,13 +146,32 @@ export default function ProjectsPage() {
     const res = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, studyEnabled: newProjectStudy }),
     });
     if (res.ok) {
       const p: Project = await res.json();
       setNewProjectName("");
+      setNewProjectStudy(false);
       await loadProjects();
       setSelectedId(p.id);
+    }
+  }
+
+  async function toggleProjectStudy(project: Project) {
+    const next = !project.study_enabled;
+    // Optimistically update the local list so the toggle reflects immediately.
+    setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, study_enabled: next } : p)));
+    const res = await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studyEnabled: next }),
+    });
+    if (!res.ok) {
+      // Revert on failure.
+      setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, study_enabled: !next } : p)));
+    } else {
+      const updated: Project = await res.json();
+      setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)));
     }
   }
 
@@ -344,7 +365,7 @@ export default function ProjectsPage() {
         <div className="grid gap-6 md:grid-cols-[260px_1fr]">
           {/* Left column: project list */}
           <Card className="p-4">
-            <form onSubmit={createProject} className="mb-3 flex gap-2">
+            <form onSubmit={createProject} className="mb-2 flex gap-2">
               <Input
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
@@ -355,6 +376,12 @@ export default function ProjectsPage() {
                 <Plus size={15} />
               </Button>
             </form>
+            <label className="mb-3 flex cursor-pointer items-center gap-2 px-1 text-[11px] text-content-muted">
+              <Switch checked={newProjectStudy} onCheckedChange={setNewProjectStudy} aria-label="Study project" />
+              <span>
+                Study project — enable concept graph, mastery tracking, and flashcards from this project&apos;s materials.
+              </span>
+            </label>
 
             <ul className="flex flex-col gap-1">
               {projects.length === 0 && (
@@ -426,17 +453,30 @@ export default function ProjectsPage() {
               </p>
             ) : (
               <>
-                <div className="mb-4 flex items-baseline justify-between gap-3">
+                <div className="mb-2 flex items-baseline justify-between gap-3">
                   <h2 className="truncate text-[18px] text-ink">{selected.name}</h2>
                   <span className="mono shrink-0 text-[11px] tracking-wide text-content-faint">
                     {materials.length} material{materials.length === 1 ? "" : "s"}
                   </span>
                 </div>
+                <label className="mb-4 flex cursor-pointer items-center gap-2 text-[11px] text-content-muted">
+                  <Switch
+                    checked={selected.study_enabled}
+                    onCheckedChange={() => toggleProjectStudy(selected)}
+                    aria-label={`Toggle study capability for ${selected.name}`}
+                  />
+                  <span>
+                    Study project — concept graph, mastery tracking, and flashcards from materials.
+                  </span>
+                </label>
                 <ProjectMemory entries={memoryEntries} onAdd={addMemory} onToggle={toggleMemory} onDelete={removeMemory} />
 
-                {/* Build concept graph (SP1). Disabled while building or when
-                    no material is ready to extract from. The chip shows the
-                    current concept/edge totals once a graph exists. */}
+                {/* Build concept graph (SP1). Study-only — shown only when this
+                    project has the study capability enabled. Disabled while
+                    building or when no material is ready to extract from. The
+                    chip shows the current concept/edge totals once a graph
+                    exists. */}
+                {selected.study_enabled && (
                 <div className="mb-5 flex flex-wrap items-center gap-3 border-b border-border pb-4">
                   <Button
                     variant="secondary"
@@ -451,6 +491,7 @@ export default function ProjectsPage() {
                     <Badge tone="neutral">{conceptCount} concepts · {edgeCount} edges</Badge>
                   )}
                 </div>
+                )}
 
                 {/* Chunk-level progress bar while a build is in flight. The
                     extract POST writes report.progress to the DB as chunks

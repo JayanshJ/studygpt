@@ -12,7 +12,7 @@ test("buildProjectMemoryBlock keeps active, non-blank entries in input order", (
 
   const block = buildProjectMemoryBlock(entries);
 
-  assert.match(block, /Project tutor memory/);
+  assert.match(block, /Project memory/);
   assert.match(block, /Use Chen notation for ER models\./);
   assert.match(block, /Prefer step-by-step derivations\./);
   assert.doesNotMatch(block, /Ignore this preference/);
@@ -32,12 +32,12 @@ test("buildProjectMemoryBlock returns an empty block when nothing is usable", ()
   );
 });
 
-test("buildProjectMemoryBlock gives the tutor clear private-use instructions", () => {
+test("buildProjectMemoryBlock gives the assistant clear private-use instructions", () => {
   const block = buildProjectMemoryBlock([
     { content: "The course calls precedence graphs conflict graphs.", active: true },
   ]);
 
-  assert.match(block, /Use this only to tailor the tutoring response/i);
+  assert.match(block, /Use this only to tailor responses/i);
   assert.match(block, /Do not mention this memory/i);
 });
 

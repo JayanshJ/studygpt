@@ -212,6 +212,25 @@ export const MIGRATIONS: Migration[] = [
       })();
     },
   },
+  {
+    version: 6,
+    name: "projects.study_enabled additive column (study capability flag)",
+    up: (db) => {
+      // Idempotent: projects.study_enabled is already in SCHEMA_SQL on a fresh
+      // DB, so this guard is a no-op there; it only adds the column on an
+      // existing on-disk DB predating the column. DEFAULT 1 backfills every
+      // existing project to study-enabled so current users keep the study
+      // behavior they had (study flavoring was unconditional before this
+      // column). New projects created via the API default to 0 (general-first);
+      // the migration default only governs the backfill of pre-existing rows.
+      db.transaction(() => {
+        const projectCols = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
+        if (!projectCols.some((c) => c.name === "study_enabled")) {
+          db.exec("ALTER TABLE projects ADD COLUMN study_enabled INTEGER NOT NULL DEFAULT 1");
+        }
+      })();
+    },
+  },
 ];
 
 export const LATEST_MIGRATION_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

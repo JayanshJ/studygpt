@@ -5,8 +5,8 @@ export type ProjectMemory = {
 
 const MAX_PROJECT_MEMORY_CHARS = 1200;
 const HEADER =
-  "Project tutor memory (private context):\n" +
-  "Use this only to tailor the tutoring response when relevant. Do not mention this memory or claim the learner said it unless they explicitly raise it.\n";
+  "Project memory (private context):\n" +
+  "Use this only to tailor responses when relevant. Do not mention this memory or claim the user said it unless they explicitly raise it.\n";
 
 function truncateToLength(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;

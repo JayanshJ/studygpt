@@ -6,9 +6,9 @@ type Variant = "primary" | "secondary" | "ghost" | "accent" | "danger";
 type Size = "sm" | "md" | "icon";
 
 const variants: Record<Variant, string> = {
-  // Filled ink — the old .btn-primary pattern, now sans chrome.
+  // Solid orange — the primary action is the page's one bold accent moment.
   primary:
-    "bg-ink text-paper-2 shadow-sm hover:-translate-y-px hover:opacity-90 active:translate-y-0 active:opacity-100 focus-visible:ring-ring",
+    "bg-rule text-white shadow-sm hover:-translate-y-px hover:opacity-90 active:translate-y-0 active:opacity-100 focus-visible:ring-ring-accent",
   secondary:
     "border border-border bg-surface text-content shadow-sm hover:-translate-y-px hover:bg-surface-2 hover:border-border-strong active:translate-y-0 focus-visible:ring-ring",
   ghost:

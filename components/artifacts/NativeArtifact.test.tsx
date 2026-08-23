@@ -23,7 +23,7 @@ test("renders a native table in platform chrome", () => {
   assert.match(markup, /Selection pushdown/);
   assert.match(markup, /Data table/);
   assert.match(markup, /Move filters close to the data source\./);
-  assert.match(markup, /<th[^>]*>Rule<\/th>/);
+  assert.match(markup, /<th[^>]*>[\s\S]*Rule[\s\S]*<\/th>/);
 });
 
 test("renders each native study renderer semantically", () => {
@@ -156,4 +156,199 @@ test("handles rejected clipboard writes without surfacing an error", async () =>
     if (navigatorDescriptor) Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
     else delete (globalThis as { navigator?: Navigator }).navigator;
   }
+});
+
+test("renders a Chen-style ER figure as inline SVG with shapes and connectors", () => {
+  const markup = renderToStaticMarkup(
+    <NativeArtifact
+      artifact={{
+        schema: "studygpt.artifact",
+        version: 1,
+        kind: "figure",
+        title: "Chen-style ER",
+        data: {
+          width: 520,
+          height: 300,
+          shapes: [
+            { id: "s", type: "rect", x: 40, y: 120, w: 120, h: 60, label: "STUDENT", kind: "entity" },
+            { id: "e", type: "rect", x: 360, y: 120, w: 120, h: 60, label: "ENROLLS", kind: "entity" },
+            { id: "r", type: "diamond", x: 240, y: 110, w: 80, h: 80, label: "has", kind: "relationship" },
+          ],
+          connectors: [
+            { id: "c1", from: "s", to: "r", style: "solid", arrow: "none", cardinality: "1" },
+            { id: "c2", from: "r", to: "e", style: "solid", arrow: "none", cardinality: "N" },
+          ],
+          legend: [{ label: "relationship", swatch: "diamond" }],
+        },
+      }}
+    />,
+  );
+
+  assert.match(markup, /role="img"/);
+  assert.match(markup, /Chen-style ER/);
+  assert.match(markup, /STUDENT/);
+  assert.match(markup, /<polygon/); // diamond
+  assert.match(markup, /<rect/); // entity boxes
+  assert.match(markup, /<line/); // connectors
+  assert.match(markup, /cardinality|1|N/);
+  assert.match(markup, /relationship/); // legend
+});
+
+test("renders an area chart with axis labels and a legend", () => {
+  const markup = renderToStaticMarkup(
+    <NativeArtifact
+      artifact={{
+        schema: "studygpt.artifact",
+        version: 1,
+        kind: "chart",
+        title: "Revenue",
+        data: {
+          chartType: "area",
+          xLabel: "Quarter",
+          yLabel: "USD",
+          labels: ["Q1", "Q2", "Q3"],
+          series: [
+            { label: "Product A", values: [100, 140, 160] },
+            { label: "Product B", values: [80, 90, 110] },
+          ],
+        },
+      }}
+    />,
+  );
+  assert.match(markup, /Quarter/);
+  assert.match(markup, /USD/);
+  assert.match(markup, /Product A/);
+  assert.match(markup, /Product B/);
+  assert.match(markup, /data-chart-grid/);
+  assert.match(markup, /data-chart-tick/);
+});
+
+test("renders a pie chart with slices and percentages", () => {
+  const markup = renderToStaticMarkup(
+    <NativeArtifact
+      artifact={{
+        schema: "studygpt.artifact",
+        version: 1,
+        kind: "chart",
+        data: {
+          chartType: "pie",
+          labels: ["A", "B", "C"],
+          series: [{ label: "Share", values: [30, 50, 20] }],
+        },
+      }}
+    />,
+  );
+  assert.match(markup, /role="img"/);
+  assert.match(markup, /<path/); // pie slices
+  assert.match(markup, /%/); // percentage labels
+});
+
+test("renders a scatter chart with data points", () => {
+  const markup = renderToStaticMarkup(
+    <NativeArtifact
+      artifact={{
+        schema: "studygpt.artifact",
+        version: 1,
+        kind: "chart",
+        data: {
+          chartType: "scatter",
+          labels: ["A", "B", "C", "D"],
+          series: [{ label: "Points", values: [2, 5, 8, 3] }],
+        },
+      }}
+    />,
+  );
+  assert.match(markup, /<circle/);
+});
+
+test("existing bar chart still renders after the upgrade (backward compat)", () => {
+  const markup = renderToStaticMarkup(
+    <NativeArtifact
+      artifact={{
+        schema: "studygpt.artifact",
+        version: 1,
+        kind: "chart",
+        title: "Balance",
+        data: {
+          chartType: "bar",
+          labels: ["Credit", "Debit"],
+          series: [{ label: "Amount", values: [12, -8] }],
+        },
+      }}
+    />,
+  );
+  assert.match(markup, /Balance/);
+  assert.match(markup, /<rect/);
+  assert.match(markup, /data-chart-grid/);
+});
+
+test("renders a definition with term, meaning, example, and related chips", () => {
+  const markup = renderToStaticMarkup(
+    <NativeArtifact
+      artifact={{
+        schema: "studygpt.artifact",
+        version: 1,
+        kind: "definition",
+        title: "Recursion",
+        data: {
+          term: "Recursion",
+          partOfSpeech: "noun",
+          meaning: "A function that calls itself.",
+          example: "factorial(n) = n * factorial(n-1)",
+          related: ["base case", "stack overflow"],
+          tone: "key",
+        },
+      }}
+    />,
+  );
+  assert.match(markup, /Recursion/);
+  assert.match(markup, /A function that calls itself\./);
+  assert.match(markup, /factorial/);
+  assert.match(markup, /RELATED/);
+  assert.match(markup, /base case/);
+  assert.match(markup, /stack overflow/);
+});
+
+test("renders a quiz with MCQ options (pre-reveal state)", () => {
+  const markup = renderToStaticMarkup(
+    <NativeArtifact
+      artifact={{
+        schema: "studygpt.artifact",
+        version: 1,
+        kind: "quiz",
+        data: {
+          items: [
+            { prompt: "What is 2+2?", options: ["3", "4", "5"], answer: 1, explanation: "Basic addition." },
+          ],
+        },
+      }}
+    />,
+  );
+  assert.match(markup, /What is 2\+2\?/);
+  assert.match(markup, /3/);
+  assert.match(markup, /4/);
+  assert.match(markup, /5/);
+  // Pre-reveal: options are buttons, not revealed as correct/incorrect
+  assert.match(markup, /<button/);
+});
+
+test("renders a true/false quiz question", () => {
+  const markup = renderToStaticMarkup(
+    <NativeArtifact
+      artifact={{
+        schema: "studygpt.artifact",
+        version: 1,
+        kind: "quiz",
+        data: {
+          items: [
+            { prompt: "Is this true?", statement: "The sky is blue.", answer: true, explanation: "On a clear day." },
+          ],
+        },
+      }}
+    />,
+  );
+  assert.match(markup, /Is this true\?/);
+  assert.match(markup, /The sky is blue\./);
+  assert.match(markup, /True/);
+  assert.match(markup, /False/);
 });

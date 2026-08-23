@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FolderKanban } from "lucide-react";
+import { FolderKanban, GraduationCap } from "lucide-react";
 import type { Project } from "@/lib/db/schema";
 import {
   Select,
@@ -34,6 +34,9 @@ export function ProjectSwitcher({ projects, activeProjectId, onChange }: Props) 
             <SelectItem value="__standalone__">Standalone</SelectItem>
             {projects.map((p) => (
               <SelectItem key={p.id} value={p.id}>
+                {p.study_enabled && (
+                  <GraduationCap size={12} strokeWidth={1.75} className="mr-1 inline text-content-faint" />
+                )}
                 {p.name}
               </SelectItem>
             ))}

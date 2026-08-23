@@ -148,6 +148,32 @@ centralizes casts and enables later row validation, but the immediate win is
 small. Client/server zod-schema sharing (replace client `as` casts) is
 valuable but doubles the surface of item 3. Fold in after item 3 lands.
 
+## Active — artifact manufacturing engine — ✅ ALL PHASES DONE
+
+Spec: `docs/superpowers/specs/2026-08-19-artifact-manufacturing-engine-design.md`
+Plan: `docs/superpowers/plans/2026-08-19-artifact-manufacturing-engine.md`
+
+All six phases implemented (verified 2026-08-22, 230 tests green):
+
+- Phases 1–2: artifact registry + ordered-candidate alias recovery (fixes
+  the "ERM → artifact not supported" dead end) + prompt reconciliation +
+  native `figure` kind (data-only vector DSL for notation-faithful diagrams
+  Mermaid can't express).
+- Phase 3: chart upgrades — scatter/area/pie/dotted types, xLabel/yLabel
+  axis labels, legend with click-to-toggle series, hover readout.
+- Phase 4: table upgrades — rich cells `{text, emphasis?, align?, tone?}`
+  (backward compatible) + client-side column sort.
+- Phase 5: `definition` kind (term/pronunciation/partOfSpeech + meaning +
+  example + related).
+- Phase 6: `quiz` kind — MCQ with client-side reveal and correct/wrong
+  styling.
+
+Hook-order cleanup in `ChartArtifact.tsx`: pie slice geometry moved to a pure
+module-level `pieSlices()` helper and the slices `useMemo` hoisted above the
+early return (was a conditional hook after an early return + render-scope
+mutation). Remaining verify output is warnings only (unused vars in artifact
+kinds/components).
+
 ---
 
 ## Orchestration

@@ -10,7 +10,7 @@ import { useServerInsertedHTML } from "next/navigation";
 // client hydration tree, React 19 never renders a <script> on the client and
 // the "Encountered a script tag while rendering React component" warning does
 // not fire (unlike a raw <script> or next/script, which React does see).
-const THEME_INIT = `(function(){try{var t=localStorage.getItem('studygpt-theme');if(t!=='dark')t='light';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='light';}})();`;
+const THEME_INIT = `(function(){try{var t=localStorage.getItem('studygpt-theme');if(t!=='dark')t='light';document.documentElement.dataset.theme=t;var d=localStorage.getItem('studygpt-design');if(d!=='classic')d='new';document.documentElement.dataset.design=d;}catch(e){document.documentElement.dataset.theme='light';document.documentElement.dataset.design='new';}})();`;
 
 export function ThemeScript() {
   useServerInsertedHTML(() => {

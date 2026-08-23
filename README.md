@@ -1,15 +1,19 @@
-# StudyGPT
+# Loom
 
-A local study companion for **concept-heavy learning** (math, physics, CS theory). A ChatGPT-style streaming chat that runs fully on your machine via [Ollama](https://ollama.com) — no API key, no per-token cost. v1 is the MVP: streaming chat + conversation history + a per-conversation **Feynman mode** (you explain concepts back; the AI critiques the gaps).
+A calm, local AI assistant that's especially good for studying. A ChatGPT-style
+streaming chat that runs fully on your machine via [Ollama](https://ollama.com)
+— no API key, no per-token cost. Use it for writing, code, analysis, or
+open-ended thinking; turn on a project's study tools to learn from your own
+materials (concept graph, mastery tracking, flashcards, explain-it-back
+Feynman mode).
 
 ## Product North Star
 
-StudyGPT should always become easier to use and more intelligently aware of
-the learner's situation. New work should remove friction, make the interface
-clearer, and use available context—conversation, selected text, project
-materials, notation memory, and intent—to help without making people repeat
-themselves. Avoid complexity that does not improve either usability or useful
-intelligence.
+Loom should always become easier to use and more intelligently aware of the
+user's situation. New work should remove friction, make the interface clearer,
+and use available context—conversation, selected text, project materials, study
+state, and intent—to help without making people repeat themselves. Avoid
+complexity that does not improve either usability or useful intelligence.
 
 ## Prerequisites
 
@@ -23,9 +27,10 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000, create a conversation, and ask something like
-"Explain why the derivative is the slope." Toggle **Feynman** to learn by
-explaining back.
+Open http://localhost:3000, create a conversation, and ask anything. For
+studying, create a **Study project** on the Projects page, add your materials
+(PDFs/URLs), and build a concept graph — or just toggle **Feynman** mode in a
+conversation to learn by explaining back.
 
 ## Configuration
 
@@ -38,12 +43,14 @@ DATABASE_URL=./data/studygpt.db
 ```
 
 The **Settings** page (the ⚙ in the sidebar) changes the model and base URL at
-runtime — no restart needed. New conversations pick up the saved model.
+runtime — no restart needed. New conversations pick up the saved model. The
+Settings page also configures optional keys for web search (Tavily), voice
+typing (OpenAI Whisper), and diagram notation (a vision model).
 
 ## Swapping to Claude or GPT later (the key design decision)
 
-Everything talks to a `Provider` interface in `lib/llm/provider.ts`. v1 ships
-only `ollamaProvider`. To use a frontier model when Ollama's reasoning isn't
+Everything talks to a `Provider` interface in `lib/llm/provider.ts`. Today only
+`ollamaProvider` is wired. To use a frontier model when Ollama's reasoning isn't
 sharp enough:
 
 1. Add a provider impl (e.g. `lib/llm/anthropic.ts`) using `@ai-sdk/anthropic`.
@@ -60,16 +67,32 @@ app/
   settings/page.tsx        # model + endpoint config
   api/
     chat/route.ts          # streaming endpoint -> provider
-    conversations/          # CRUD + per-conversation get/patch/delete
+    conversations/         # CRUD + per-conversation get/patch/delete
+    projects/              # project CRUD + study capability toggle
     settings/route.ts      # live config
 lib/
-  db/                      # better-sqlite3 schema + queries
+  db/                      # better-sqlite3 schema + queries + migrations
   llm/                     # swappable provider layer
-  prompts/                 # chat + Feynman system prompts
+  prompts/                 # chat, feynman, document, study-persona prompts
+  chat/                    # answer engine, RAG, notation, study actions
 components/                # Sidebar, ChatMessage (markdown+KaTeX), ChatInput, ModeToggle
 ```
 
-## Roadmap (out of scope for v1)
+## Study loop
 
-- **Phase 2:** study from your own materials — upload PDFs/notes, embed with Ollama, retrieve relevant chunks with citations.
-- **Phase 3:** concept/knowledge graph — auto-extract concepts + relationships from conversations and materials, visualize with reactflow, track mastery.
+A Study project (study capability enabled) closes a learning loop that a plain
+chat doesn't:
+
+- **Materials** — upload PDFs or add URLs; chunked + embedded for retrieval with
+  citations.
+- **Concept graph** — auto-extract concepts + relationships from your materials,
+  visualized with Cytoscape, with prerequisite-gated learning paths and coverage.
+- **Mastery** — per-concept mastery bands derived from your flashcard review
+  history, fed back into the tutor's system prompt so it focuses on what you're
+  slipping on.
+- **Flashcards** — inline flashcard decks in chat with FSRS spaced review.
+- **Feynman mode** — explain a concept back; the AI critiques the gaps.
+
+A general project (study off) is just a container of materials + memory +
+conversations with the general assistant persona — useful for coding, writing,
+and research without the study surfaces.

@@ -37,7 +37,7 @@ export function BottomTabBar() {
                   aria-hidden
                   layoutId="active-bottom-tab-indicator"
                   transition={layoutTransition}
-                  className="absolute -top-1 h-[3px] w-5 rounded-full bg-rule"
+                  className="absolute inset-0 rounded-control bg-ink/[0.07]"
                 />
               )}
               <Icon size={19} strokeWidth={1.75} />

@@ -37,7 +37,8 @@ export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    study_enabled INTEGER NOT NULL DEFAULT 1
   )`,
   `CREATE TABLE IF NOT EXISTS project_memory (
     id TEXT PRIMARY KEY,
@@ -379,6 +380,12 @@ export interface Project {
   id: string;
   name: string;
   created_at: number;
+  // Whether this project has the study capability enabled (concept graph,
+  // mastery tracking, flashcards from materials, diagram notation). Default 1
+  // so existing study projects keep their behavior; general-purpose projects
+  // (coding, writing, research) set it to 0 and get the general assistant
+  // persona with no study-specific prompt injection. See answer-engine.ts.
+  study_enabled: boolean;
 }
 
 export interface ProjectMemoryEntry {

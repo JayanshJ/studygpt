@@ -14,12 +14,10 @@ import { SidebarSlotProvider } from "./sidebar-slot";
 // instead of a nav rail + a separate conversation pane.
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    // Transparent outer shell: on macOS the Electron window uses vibrancy
-    // (under-window material), so the sidebar — whose own background is
-    // transparent/rgba — shows the blurred desktop wallpaper through it, like
-    // ChatGPT/Claude's native Mac apps. The content panel stays opaque. No
-    // outer padding or nested rounded cards: native Mac apps have the sidebar
-    // flush to the window edge, the content panel flush beside it.
+    // Outer shell. The sidebar carries its own tonal tint (bg-paper-2/60,
+    // Claude-style two-tone); the content panel is opaque bg-paper beside it.
+    // No separating border — the tone shift does that work. No outer padding
+    // or nested rounded cards: both panes sit flush to the window edge.
     <div className="flex h-[100dvh] w-full gap-0 overflow-hidden bg-transparent text-ink">
       <SidebarSlotProvider>
         <TooltipProvider delayDuration={200} skipDelayDuration={300}>
@@ -30,10 +28,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               overflow-y-auto never engages and the outer overflow-hidden clips
               the spill — the page reads as "unscrollable". min-h-0 makes the
               100vh stretch a hard bound so the page scrolls internally.
-              bg-paper is the opaque content surface; the left border separates
-              it from the translucent vibrancy sidebar. No rounding/shadow — it's
-              a flush native pane, not a floating card. */}
-          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-line bg-paper">{children}</div>
+              bg-paper is the opaque content surface; the sidebar's tint is the
+              only separation. No rounding/shadow — it's a flush pane, not
+              a floating card. */}
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper">{children}</div>
           <BottomTabBar />
           <Toaster />
         </TooltipProvider>

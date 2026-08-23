@@ -4,6 +4,9 @@ import { ArtifactFrame } from "./ArtifactFrame";
 import { CalloutArtifact } from "./CalloutArtifact";
 import { ChartArtifact } from "./ChartArtifact";
 import { ComparisonArtifact } from "./ComparisonArtifact";
+import { DefinitionArtifact } from "./DefinitionArtifact";
+import { FigureArtifact } from "./FigureArtifact";
+import { QuizArtifact } from "./QuizArtifact";
 import { StepsArtifact } from "./StepsArtifact";
 import { TableArtifact } from "./TableArtifact";
 import { ArtifactVersionMenu, type ArtifactHistoryEntry } from "./ArtifactVersionMenu";
@@ -43,11 +46,14 @@ export function NativeArtifact({
   return (
     <ArtifactFrame kind={active.kind} title={active.title} summary={active.summary} source={source}>
       {active.kind === "diagram" && <MermaidGraphic code={active.data.mermaid} />}
+      {active.kind === "figure" && <FigureArtifact {...active.data} title={active.title} summary={active.summary} />}
       {active.kind === "table" && <TableArtifact columns={active.data.columns} rows={active.data.rows} />}
       {active.kind === "comparison" && <ComparisonArtifact items={active.data.items} />}
       {active.kind === "steps" && <StepsArtifact items={active.data.items} />}
       {active.kind === "callout" && <CalloutArtifact {...active.data} />}
       {active.kind === "chart" && <ChartArtifact {...active.data} title={active.title} summary={active.summary} />}
+      {active.kind === "definition" && <DefinitionArtifact {...active.data} />}
+      {active.kind === "quiz" && <QuizArtifact {...active.data} />}
       {onVersionChange && artifactId && (
         <ArtifactVersionMenu
           artifactId={artifactId}

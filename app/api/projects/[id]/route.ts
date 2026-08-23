@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
-import { deleteProject, getProject, listMaterials, renameProject } from "@/lib/db";
+import { deleteProject, getProject, listMaterials, renameProject, setProjectStudyEnabled } from "@/lib/db";
 import { z } from "@/lib/server/validation";
 import { withRouteHandler } from "@/lib/server/withRouteHandler";
 
-// PATCH /api/projects/[id] — rename a project. Body: { name }. The prior inline
-// guard only renamed when `name` was a non-blank string and otherwise no-op'd
-// silently (never a 400). The preprocess maps every non-(non-blank-string)
-// value — missing, empty, whitespace-only, wrong type — to `undefined` so the
-// schema accepts them and the handler treats them as a no-op, preserving the
-// exact acceptance criteria.
+// PATCH /api/projects/[id] — rename a project and/or toggle its study
+// capability. Body: { name?, studyEnabled? }. The prior inline guard only
+// renamed when `name` was a non-blank string and otherwise no-op'd silently
+// (never a 400). The preprocess maps every non-(non-blank-string) value —
+// missing, empty, whitespace-only, wrong type — to `undefined` so the schema
+// accepts them and the handler treats them as a no-op, preserving the exact
+// acceptance criteria. `studyEnabled` is an explicit boolean toggle: present
+// → set to that value; absent → unchanged.
 const renameProjectBodySchema = z.object({
   name: z.preprocess(
     (v) => (typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined),
     z.string().min(1).optional(),
   ),
+  studyEnabled: z.boolean().optional(),
 });
 
 // GET /api/projects/[id] — project + its materials.
@@ -39,8 +42,9 @@ export const PATCH = withRouteHandler<{ id: string }>(async ({ request, params }
   }
   const result = renameProjectBodySchema.safeParse(json);
   if (!result.success) return NextResponse.json({ error: "Invalid request", issues: result.error.issues }, { status: 400 });
-  const { name } = result.data;
+  const { name, studyEnabled } = result.data;
   if (name) renameProject(id, name);
+  if (typeof studyEnabled === "boolean") setProjectStudyEnabled(id, studyEnabled);
   return NextResponse.json(getProject(id));
 });
 
