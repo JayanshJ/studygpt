@@ -59,8 +59,3 @@ lib/
   prompts/                 # chat + Feynman system prompts
 components/                # Sidebar, ChatMessage (markdown+KaTeX), ChatInput, ModeToggle
 ```
-
-## Roadmap (out of scope for v1)
-
-- **Phase 2:** study from your own materials — upload PDFs/notes, embed with Ollama, retrieve relevant chunks with citations.
-- **Phase 3:** concept/knowledge graph — auto-extract concepts + relationships from conversations and materials, visualize with reactflow, track mastery.
